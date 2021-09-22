@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/cs3org/reva/pkg/appctx"
 	"github.com/cs3org/reva/pkg/token"
 	"github.com/cs3org/reva/pkg/user"
 	"google.golang.org/grpc/metadata"
@@ -41,7 +40,7 @@ func (h *V1Handler) cacheWarmup(w http.ResponseWriter, r *http.Request) {
 		req := r.Clone(ctx)
 
 		id := u.Id.OpaqueId
-		if p, err := h.WarmupCache.Get(id); err != nil {
+		if _, err := h.WarmupCache.Get(id); err != nil {
 			p := httptest.NewRecorder()
 			_ = h.WarmupCache.Set(id, true)
 			go h.AppsHandler.SharingHandler.SharesHandler.ListSharesWithOthers(p, req)
