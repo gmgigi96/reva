@@ -316,6 +316,10 @@ func (m *manager) FindUsers(ctx context.Context, query string) ([]*userpb.User, 
 	// "l" => look into lightweight accounts
 	// none => look into primary
 
+	log := appctx.GetLogger(ctx)
+
+	log.Error().Msgf("rest: query = \"%s\"", query)
+
 	parts := strings.SplitN(query, ":", 2)
 
 	var namespace string
@@ -323,6 +327,8 @@ func (m *manager) FindUsers(ctx context.Context, query string) ([]*userpb.User, 
 		// the query contains a namespace filter
 		namespace, query = parts[0], parts[1]
 	}
+
+	log.Error().Msgf("rest: namespace=\"%s\" query=\"%s\"", namespace, query)
 
 	var filters []string
 	switch {
