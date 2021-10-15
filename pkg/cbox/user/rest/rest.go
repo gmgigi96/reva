@@ -356,18 +356,25 @@ func (m *manager) FindUsers(ctx context.Context, query string) ([]*userpb.User, 
 	var accountsFilters []userpb.UserType
 	switch namespace {
 	case "":
+		log.Error().Msg("rest: filter by primary only")
 		accountsFilters = []userpb.UserType{userpb.UserType_USER_TYPE_PRIMARY}
 	case "a":
+		log.Error().Msg("rest: filter by primary, secondary and service")
 		accountsFilters = []userpb.UserType{userpb.UserType_USER_TYPE_PRIMARY, userpb.UserType_USER_TYPE_SECONDARY, userpb.UserType_USER_TYPE_SERVICE}
 	case "l":
+		log.Error().Msg("rest: filter by lightweight")
 		accountsFilters = []userpb.UserType{userpb.UserType_USER_TYPE_LIGHTWEIGHT}
 	}
+
+	log.Error().Msgf("rest: users returned without filters: %+v", users)
 
 	for _, u := range users {
 		if isUserAnyType(u, accountsFilters) {
 			userSlice = append(userSlice, u)
 		}
 	}
+
+	log.Error().Msgf("rest: users filtered: %+v", userSlice)
 
 	return userSlice, nil
 }
