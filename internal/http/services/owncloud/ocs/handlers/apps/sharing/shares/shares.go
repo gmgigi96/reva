@@ -921,6 +921,7 @@ func (h *Handler) mustGetIdentifiers(ctx context.Context, client gateway.Gateway
 			GroupId: &grouppb.GroupId{
 				OpaqueId: id,
 			},
+			SkipFetchingMembers: true,
 		})
 		if err != nil {
 			sublog.Err(err).Msg("could not look up group")
@@ -950,6 +951,7 @@ func (h *Handler) mustGetIdentifiers(ctx context.Context, client gateway.Gateway
 			UserId: &userpb.UserId{
 				OpaqueId: id,
 			},
+			SkipFetchingUserGroups: true,
 		})
 		if err != nil {
 			sublog.Err(err).Msg("could not look up user")

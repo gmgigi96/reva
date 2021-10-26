@@ -1758,7 +1758,8 @@ func (fs *eosfs) getUIDGateway(ctx context.Context, u *userpb.UserId) (eosclient
 		return eosclient.Authorization{}, errors.Wrap(err, "eosfs: error getting gateway grpc client")
 	}
 	getUserResp, err := client.GetUser(ctx, &userpb.GetUserRequest{
-		UserId: u,
+		UserId:                 u,
+		SkipFetchingUserGroups: true,
 	})
 	if err != nil {
 		return eosclient.Authorization{}, errors.Wrap(err, "eosfs: error getting user")
@@ -1787,8 +1788,9 @@ func (fs *eosfs) getUserIDGateway(ctx context.Context, uid string) (*userpb.User
 		return nil, errors.Wrap(err, "eosfs: error getting gateway grpc client")
 	}
 	getUserResp, err := client.GetUserByClaim(ctx, &userpb.GetUserByClaimRequest{
-		Claim: "uid",
-		Value: uid,
+		Claim:                  "uid",
+		Value:                  uid,
+		SkipFetchingUserGroups: true,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "eosfs: error getting user")
