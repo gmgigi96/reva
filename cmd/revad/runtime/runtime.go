@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/cs3org/reva/cmd/revad/internal/grace"
+	"github.com/cs3org/reva/pkg/errtypes"
 	"github.com/cs3org/reva/pkg/logger"
 	"github.com/cs3org/reva/pkg/registry/memory"
 	"github.com/cs3org/reva/pkg/rgrpc"
@@ -92,7 +93,18 @@ func run(mainConf map[string]interface{}, coreConf *coreConf, logger *zerolog.Lo
 	}
 	initCPUCount(coreConf, logger)
 
-	servers := initServers(mainConf, logger)
+	servers, err := initServers(mainConf, logger)
+	if err != nil {
+		switch err.(type) {
+		case errtypes.NotFound:
+			// just log the error as a warning
+			logger.Warn().Msg(err.Error())
+			return
+		default:
+			// panic
+			log.Panic(err)
+		}
+	}
 	watcher, err := initWatcher(logger, filename)
 	if err != nil {
 		log.Panic(err)
@@ -121,13 +133,12 @@ func initWatcher(log *zerolog.Logger, filename string) (*grace.Watcher, error) {
 	return watcher, err
 }
 
-func initServers(mainConf map[string]interface{}, log *zerolog.Logger) map[string]grace.Server {
+func initServers(mainConf map[string]interface{}, log *zerolog.Logger) (map[string]grace.Server, error) {
 	servers := map[string]grace.Server{}
 	if isEnabledHTTP(mainConf) {
 		s, err := getHTTPServer(mainConf["http"], log)
 		if err != nil {
-			log.Error().Err(err).Msg("error creating http server")
-			os.Exit(1)
+			return nil, errors.Wrap(err, "error creating http server")
 		}
 		servers["http"] = s
 	}
@@ -135,17 +146,15 @@ func initServers(mainConf map[string]interface{}, log *zerolog.Logger) map[strin
 	if isEnabledGRPC(mainConf) {
 		s, err := getGRPCServer(mainConf["grpc"], log)
 		if err != nil {
-			log.Error().Err(err).Msg("error creating grpc server")
-			os.Exit(1)
+			return nil, errors.Wrap(err, "error creating grpc server")
 		}
 		servers["grpc"] = s
 	}
 
 	if len(servers) == 0 {
-		log.Info().Msg("nothing to do, no grpc/http enabled_services declared in config")
-		os.Exit(1)
+		return nil, errtypes.NotFound("nothing to do, no grpc/http enabled_services declared in config")
 	}
-	return servers
+	return servers, nil
 }
 
 func initTracing(conf *coreConf) {
