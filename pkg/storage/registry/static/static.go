@@ -20,6 +20,7 @@ package static
 
 import (
 	"context"
+	"fmt"
 	"path"
 	"regexp"
 	"strings"
@@ -141,6 +142,13 @@ func (b *reg) GetHome(ctx context.Context) (*registrypb.ProviderInfo, error) {
 }
 
 func rulesFilteredByUserAgent(ctx context.Context, rules map[string]rule) map[string]rule {
+	ua, ok := ctxpkg.ContextGetUserAgent(ctx)
+	if !ok {
+		fmt.Println("***** user agent not set in context *****")
+		return rules
+	}
+	fmt.Printf("***** user agent in rulesFiltered = %+v *****\n", ua)
+
 	filtered := make(map[string]rule)
 	for prefix, rule := range rules {
 		// check if the provider is allowed to be shown according to the
@@ -149,7 +157,7 @@ func rulesFilteredByUserAgent(ctx context.Context, rules map[string]rule) map[st
 		// every agents that made the request could see the provider
 
 		if len(rule.AllowedUserAgents) != 0 {
-			if ua, ok := ctxpkg.ContextGetUserAgent(ctx); !ok || !useragent.IsAllowed(ua, rule.AllowedUserAgents) {
+			if !useragent.IsAllowed(ua, rule.AllowedUserAgents) {
 				continue
 			}
 		}
