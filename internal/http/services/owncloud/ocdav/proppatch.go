@@ -57,7 +57,7 @@ func (s *svc) handlePathProppatch(w http.ResponseWriter, r *http.Request, ns str
 		return
 	}
 
-	c, err := s.getClient()
+	c, err := s.getClient(r.UserAgent())
 	if err != nil {
 		sublog.Error().Err(err).Msg("error getting grpc client")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -129,7 +129,7 @@ func (s *svc) handleSpacesProppatch(w http.ResponseWriter, r *http.Request, spac
 		return
 	}
 
-	c, err := s.getClient()
+	c, err := s.getClient(r.UserAgent())
 	if err != nil {
 		sublog.Error().Err(err).Msg("error getting grpc client")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -167,7 +167,7 @@ func (s *svc) handleSpacesProppatch(w http.ResponseWriter, r *http.Request, spac
 }
 
 func (s *svc) handleProppatch(ctx context.Context, w http.ResponseWriter, r *http.Request, ref *provider.Reference, patches []Proppatch, log zerolog.Logger) ([]xml.Name, []xml.Name, bool) {
-	c, err := s.getClient()
+	c, err := s.getClient(r.UserAgent())
 	if err != nil {
 		log.Error().Err(err).Msg("error getting grpc client")
 		w.WriteHeader(http.StatusInternalServerError)

@@ -96,7 +96,7 @@ func (h *SpacesHandler) Handler(s *svc) http.Handler {
 
 func (s *svc) lookUpStorageSpaceReference(ctx context.Context, spaceID string, relativePath string) (*storageProvider.Reference, *rpc.Status, error) {
 	// Get the getway client
-	gatewayClient, err := s.getClient()
+	gatewayClient, err := s.getClient("")
 	if err != nil {
 		return nil, nil, err
 	}

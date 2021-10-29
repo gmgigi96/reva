@@ -77,7 +77,7 @@ func (s *svc) handleMkcol(ctx context.Context, w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	client, err := s.getClient()
+	client, err := s.getClient(r.UserAgent())
 	if err != nil {
 		log.Error().Err(err).Msg("error getting grpc client")
 		w.WriteHeader(http.StatusInternalServerError)

@@ -161,8 +161,7 @@ func (s *svc) Unprotected() []string {
 
 func (s *svc) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := ctxpkg.ContextSetUserAgent(r.Context(), r.UserAgent())
-		r = r.WithContext(ctx)
+		ctx := r.Context()
 		log := appctx.GetLogger(ctx)
 
 		addAccessHeaders(w, r)
@@ -232,8 +231,8 @@ func (s *svc) Handler() http.Handler {
 	})
 }
 
-func (s *svc) getClient() (gateway.GatewayAPIClient, error) {
-	return pool.GetGatewayServiceClient(s.c.GatewaySvc)
+func (s *svc) getClient(userAgent string) (gateway.GatewayAPIClient, error) {
+	return pool.GetGatewayServiceClientWithUserAgent(s.c.GatewaySvc, userAgent)
 }
 
 func applyLayout(ctx context.Context, ns string, useLoggedInUserNS bool, requestPath string) string {

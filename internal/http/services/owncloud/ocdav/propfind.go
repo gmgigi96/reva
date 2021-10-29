@@ -174,7 +174,7 @@ func (s *svc) getResourceInfos(ctx context.Context, w http.ResponseWriter, r *ht
 		return nil, nil, false
 	}
 
-	client, err := s.getClient()
+	client, err := s.getClient(r.UserAgent())
 	if err != nil {
 		log.Error().Err(err).Msg("error getting grpc client")
 		w.WriteHeader(http.StatusInternalServerError)

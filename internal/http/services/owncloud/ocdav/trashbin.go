@@ -457,7 +457,7 @@ func (h *TrashbinHandler) restore(w http.ResponseWriter, r *http.Request, s *svc
 		return
 	}
 
-	client, err := s.getClient()
+	client, err := s.getClient(r.UserAgent())
 	if err != nil {
 		sublog.Error().Err(err).Msg("error getting grpc client")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -593,7 +593,7 @@ func (h *TrashbinHandler) delete(w http.ResponseWriter, r *http.Request, s *svc,
 
 	sublog := appctx.GetLogger(ctx).With().Str("key", key).Logger()
 
-	client, err := s.getClient()
+	client, err := s.getClient(r.UserAgent())
 	if err != nil {
 		sublog.Error().Err(err).Msg("error getting grpc client")
 		w.WriteHeader(http.StatusInternalServerError)

@@ -50,7 +50,7 @@ func (s *svc) handlePathHead(w http.ResponseWriter, r *http.Request, ns string) 
 }
 
 func (s *svc) handleHead(ctx context.Context, w http.ResponseWriter, r *http.Request, ref *provider.Reference, log zerolog.Logger) {
-	client, err := s.getClient()
+	client, err := s.getClient(r.UserAgent())
 	if err != nil {
 		log.Error().Err(err).Msg("error getting grpc client")
 		w.WriteHeader(http.StatusInternalServerError)
