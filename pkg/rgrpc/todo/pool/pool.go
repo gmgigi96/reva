@@ -84,9 +84,8 @@ var (
 // with open census tracing support.
 // TODO(labkode): make grpc tls configurable.
 // TODO make maxCallRecvMsgSize configurable, raised from the default 4MB to be able to list 10k files
-func NewConn(endpoint string) (*grpc.ClientConn, error) {
-	conn, err := grpc.Dial(
-		endpoint,
+func NewConn(endpoint, userAgent string) (*grpc.ClientConn, error) {
+	options := []grpc.DialOption{
 		grpc.WithInsecure(),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(maxCallRecvMsgSize),
@@ -109,12 +108,30 @@ func NewConn(endpoint string) (*grpc.ClientConn, error) {
 				),
 			),
 		),
+	}
+
+	if userAgent != "" {
+		options = append(options, grpc.WithUserAgent(userAgent))
+	}
+
+	conn, err := grpc.Dial(
+		endpoint,
+		options...,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return conn, nil
+}
+
+func GetGatewayServiceClientWithUserAgent(endpoint, userAgent string) (gateway.GatewayAPIClient, error) {
+	// TODO (gdelmont): cache in the connections endpoint map
+	conn, err := NewConn(endpoint, userAgent)
+	if err != nil {
+		return nil, err
+	}
+	return gateway.NewGatewayAPIClient(conn), nil
 }
 
 // GetGatewayServiceClient returns a GatewayServiceClient.
@@ -126,7 +143,7 @@ func GetGatewayServiceClient(endpoint string) (gateway.GatewayAPIClient, error) 
 		return val.(gateway.GatewayAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +163,7 @@ func GetUserProviderServiceClient(endpoint string) (user.UserAPIClient, error) {
 		return val.(user.UserAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +182,7 @@ func GetGroupProviderServiceClient(endpoint string) (group.GroupAPIClient, error
 		return val.(group.GroupAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +201,7 @@ func GetStorageProviderServiceClient(endpoint string) (storageprovider.ProviderA
 		return c.(storageprovider.ProviderAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +222,7 @@ func GetAuthRegistryServiceClient(endpoint string) (authregistry.RegistryAPIClie
 	}
 
 	// if not, create a new connection
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +242,7 @@ func GetAuthProviderServiceClient(endpoint string) (authprovider.ProviderAPIClie
 		return c.(authprovider.ProviderAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +261,7 @@ func GetAppAuthProviderServiceClient(endpoint string) (applicationauth.Applicati
 		return c.(applicationauth.ApplicationsAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +280,7 @@ func GetUserShareProviderClient(endpoint string) (collaboration.CollaborationAPI
 		return c.(collaboration.CollaborationAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +299,7 @@ func GetOCMShareProviderClient(endpoint string) (ocm.OcmAPIClient, error) {
 		return c.(ocm.OcmAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +318,7 @@ func GetOCMInviteManagerClient(endpoint string) (invitepb.InviteAPIClient, error
 		return c.(invitepb.InviteAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +337,7 @@ func GetPublicShareProviderClient(endpoint string) (link.LinkAPIClient, error) {
 		return c.(link.LinkAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +356,7 @@ func GetPreferencesClient(endpoint string) (preferences.PreferencesAPIClient, er
 		return c.(preferences.PreferencesAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +375,7 @@ func GetAppRegistryClient(endpoint string) (appregistry.RegistryAPIClient, error
 		return c.(appregistry.RegistryAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +394,7 @@ func GetAppProviderClient(endpoint string) (appprovider.ProviderAPIClient, error
 		return c.(appprovider.ProviderAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +413,7 @@ func GetStorageRegistryClient(endpoint string) (storageregistry.RegistryAPIClien
 		return c.(storageregistry.RegistryAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +432,7 @@ func GetOCMProviderAuthorizerClient(endpoint string) (ocmprovider.ProviderAPICli
 		return c.(ocmprovider.ProviderAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +451,7 @@ func GetOCMCoreClient(endpoint string) (ocmcore.OcmCoreAPIClient, error) {
 		return c.(ocmcore.OcmCoreAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
@@ -453,7 +470,7 @@ func GetDataTxClient(endpoint string) (datatx.TxAPIClient, error) {
 		return c.(datatx.TxAPIClient), nil
 	}
 
-	conn, err := NewConn(endpoint)
+	conn, err := NewConn(endpoint, "")
 	if err != nil {
 		return nil, err
 	}
