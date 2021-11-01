@@ -162,9 +162,6 @@ func (s *svc) Unprotected() []string {
 func (s *svc) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		ctx = ctxpkg.ContextSetToken(ctx, r.UserAgent())
-		r = r.WithContext(ctx)
-
 		log := appctx.GetLogger(ctx)
 
 		addAccessHeaders(w, r)
