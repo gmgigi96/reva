@@ -35,6 +35,7 @@ import (
 	provider "github.com/cs3org/go-cs3apis/cs3/storage/provider/v1beta1"
 	registry "github.com/cs3org/go-cs3apis/cs3/storage/registry/v1beta1"
 	types "github.com/cs3org/go-cs3apis/cs3/types/v1beta1"
+	ctxpkg "github.com/cs3org/reva/pkg/ctx"
 	rtrace "github.com/cs3org/reva/pkg/trace"
 	"github.com/cs3org/reva/pkg/utils"
 
@@ -42,6 +43,9 @@ import (
 	"github.com/cs3org/reva/pkg/errtypes"
 	"github.com/cs3org/reva/pkg/rgrpc/status"
 	"github.com/cs3org/reva/pkg/rgrpc/todo/pool"
+	"github.com/cs3org/reva/pkg/storage/utils/etag"
+	"github.com/cs3org/reva/pkg/useragent"
+	"github.com/cs3org/reva/pkg/utils"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -1479,6 +1483,108 @@ func (s *svc) ListContainerStream(_ *provider.ListContainerStreamRequest, _ gate
 	return errtypes.NotSupported("Unimplemented")
 }
 
+func (s *svc) listHome(ctx context.Context, req *provider.ListContainerRequest) (*provider.ListContainerResponse, error) {
+	lcr, err := s.listContainer(ctx, &provider.ListContainerRequest{
+	Ref:                   &provider.Reference{Path: s.getHome(ctx)},
+	ArbitraryMetadataKeys: req.ArbitraryMetadataKeys,
+})
+if err != nil {
+	return &provider.ListContainerResponse{
+		Status: status.NewInternal(ctx, err, "gateway: error listing home"),
+	}, nil
+}
+if lcr.Status.Code != rpc.Code_CODE_OK {
+	return &provider.ListContainerResponse{
+		Status: lcr.Status,
+	}, nil
+}
+
+for i := range lcr.Infos {
+	if s.isSharedFolder(ctx, lcr.Infos[i].GetPath()) {
+		statSharedFolder, err := s.statSharesFolder(ctx)
+		if err != nil {
+			return &provider.ListContainerResponse{
+				Status: status.NewInternal(ctx, err, "gateway: error stating shares folder"),
+			}, nil
+		}
+		if statSharedFolder.Status.Code != rpc.Code_CODE_OK {
+			return &provider.ListContainerResponse{
+				Status: statSharedFolder.Status,
+			}, nil
+		}
+		lcr.Infos[i] = statSharedFolder.Info
+		break
+	}
+}
+
+return lcr, nil
+}
+
+func (s *svc) listSharesFolder(ctx context.Context) (*provider.ListContainerResponse, error) {
+lcr, err := s.listContainer(ctx, &provider.ListContainerRequest{Ref: &provider.Reference{Path: s.getSharedFolder(ctx)}})
+if err != nil {
+	return &provider.ListContainerResponse{
+		Status: status.NewInternal(ctx, err, "gateway: error listing shared folder"),
+	}, nil
+}
+if lcr.Status.Code != rpc.Code_CODE_OK {
+	return &provider.ListContainerResponse{
+		Status: lcr.Status,
+	}, nil
+}
+checkedInfos := make([]*provider.ResourceInfo, 0)
+for i := range lcr.Infos {
+	info, protocol, err := s.checkRef(ctx, lcr.Infos[i])
+	if err != nil {
+		// create status to log the proper messages
+		// this might arise when the shared resource has been moved to the recycle bin
+		// this might arise when the resource was unshared, but the share reference was not removed
+		status.NewStatusFromErrType(ctx, "error resolving reference "+lcr.Infos[i].Target, err)
+		// continue on errors so the user can see a list of the working shares
+		continue
+	}
+
+	if protocol == "webdav" {
+		info, err = s.webdavRefStat(ctx, lcr.Infos[i].Target)
+		if err != nil {
+			// Might be the case that the webdav token has expired
+			continue
+		}
+	}
+
+	info.Path = lcr.Infos[i].Path
+	checkedInfos = append(checkedInfos, info)
+}
+lcr.Infos = checkedInfos
+
+return lcr, nil
+}
+
+func (s *svc) isFolderHidden(ua, path string) bool {
+uaSet, ok := s.hiddenRootFolders[ua]
+if !ok {
+	return false
+}
+_, ok = uaSet[path]
+return ok
+}
+
+func (s *svc) filterProvidersByUserAgent(ctx context.Context, providers []*registry.ProviderInfo) []*registry.ProviderInfo {
+ua, ok := ctxpkg.ContextGetUserAgent(ctx)
+if !ok {
+	return providers
+}
+cat := useragent.GetCategory(ua)
+
+filters := []*registry.ProviderInfo{}
+for _, p := range providers {
+	if !s.isFolderHidden(cat, p.ProviderPath) {
+		filters = append(filters, p)
+	}
+}
+return filters
+}
+
 func (s *svc) listContainer(ctx context.Context, req *provider.ListContainerRequest) (*provider.ListContainerResponse, error) {
 	providers, err := s.findProviders(ctx, req.Ref)
 	if err != nil {
@@ -1501,6 +1607,18 @@ func (s *svc) listContainer(ctx context.Context, req *provider.ListContainerRequ
 			return rsp, err
 		}
 		return rsp, nil
+	}
+
+	p, st := s.getPath(ctx, req.Ref, req.ArbitraryMetadataKeys...)
+	if st.Code != rpc.Code_CODE_OK {
+		return &provider.ListContainerResponse{
+			Status: st,
+		}, nil
+	}
+
+	// check if the path is the root folder
+	if path.Clean(p) == "/" {
+		providers = s.filterProvidersByUserAgent(ctx, providers)
 	}
 
 	return s.listContainerAcrossProviders(ctx, req, providers)
