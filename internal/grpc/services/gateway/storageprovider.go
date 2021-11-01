@@ -1594,8 +1594,19 @@ func (s *svc) listContainer(ctx context.Context, req *provider.ListContainerRequ
 	}
 	providers = getUniqueProviders(providers)
 
-	resPath := req.Ref.GetPath()
-	if len(providers) == 1 && (utils.IsRelativeReference(req.Ref) || resPath == "" || strings.HasPrefix(resPath, providers[0].ProviderPath)) {
+	p, st := s.getPath(ctx, req.Ref, req.ArbitraryMetadataKeys...)
+	if st.Code != rpc.Code_CODE_OK {
+		return &provider.ListContainerResponse{
+			Status: st,
+		}, nil
+	}
+
+	// check if the path is the root folder
+	if path.Clean(p) == "/" {
+		providers = s.filterProvidersByUserAgent(ctx, providers)
+	}
+
+	if len(providers) == 1 && (utils.IsRelativeReference(req.Ref) || p == "" || strings.HasPrefix(p, providers[0].ProviderPath)) {
 		c, err := s.getStorageProviderClient(ctx, providers[0])
 		if err != nil {
 			return &provider.ListContainerResponse{
@@ -1607,18 +1618,6 @@ func (s *svc) listContainer(ctx context.Context, req *provider.ListContainerRequ
 			return rsp, err
 		}
 		return rsp, nil
-	}
-
-	p, st := s.getPath(ctx, req.Ref, req.ArbitraryMetadataKeys...)
-	if st.Code != rpc.Code_CODE_OK {
-		return &provider.ListContainerResponse{
-			Status: st,
-		}, nil
-	}
-
-	// check if the path is the root folder
-	if path.Clean(p) == "/" {
-		providers = s.filterProvidersByUserAgent(ctx, providers)
 	}
 
 	return s.listContainerAcrossProviders(ctx, req, providers)
@@ -2057,11 +2056,11 @@ func getUniqueProviders(providers []*registry.ProviderInfo) []*registry.Provider
 	for _, p := range providers {
 		unique[p.Address] = p
 	}
-	pro := make([]*registry.ProviderInfo, 0, len(unique))
-	for _, p := range unique {
-		pro = append(pro, p)
+	res := make([]*registry.ProviderInfo, 0, len(unique))
+	for _, provider := range unique {
+		res = append(res, provider)
 	}
-	return pro
+	return res
 }
 
 type etagWithTS struct {
