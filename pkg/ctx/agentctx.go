@@ -26,25 +26,39 @@ import (
 )
 
 // UserAgentHeader is the header used for the user agent
-const UserAgentHeader = "x-user-agent"
+const UserAgentHeader = "user-agent"
+
+type userAgentKey struct{}
 
 // ContextGetUserAgent returns the user agent if set in the given context.
 // see https://github.com/grpc/grpc-go/issues/1100
 func ContextGetUserAgent(ctx context.Context) (*ua.UserAgent, bool) {
-	md, ok := metadata.FromIncomingContext(ctx)
+	userAgentStr, ok := ContextGetUserAgentString(ctx)
 	if !ok {
 		return nil, false
+	}
+	userAgent := ua.Parse(userAgentStr)
+	return &userAgent, true
+}
+
+func ContextGetUserAgentString(ctx context.Context) (string, bool) {
+	if u, ok := ctx.Value(userAgentKey{}).(string); ok {
+		return u, true
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "", false
 	}
 	userAgentLst, ok := md[UserAgentHeader]
 	if !ok {
-		userAgentLst, ok = md["user-agent"]
-		if !ok {
-			return nil, false
-		}
+		return "", false
 	}
 	if len(userAgentLst) == 0 {
-		return nil, false
+		return "", false
 	}
-	userAgent := ua.Parse(userAgentLst[0])
-	return &userAgent, true
+	return userAgentLst[0], true
+}
+
+func ContextSetUserAgent(ctx context.Context, userAgent string) context.Context {
+	return context.WithValue(ctx, userAgentKey{}, userAgent)
 }
