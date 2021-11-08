@@ -1585,6 +1585,31 @@ for _, p := range providers {
 return filters
 }
 
+func (s *svc) isFolderHidden(ua, path string) bool {
+	uaSet, ok := s.hiddenRootFolders[ua]
+	if !ok {
+		return false
+	}
+	_, ok = uaSet[path]
+	return ok
+}
+
+func (s *svc) filterProvidersByUserAgent(ctx context.Context, providers []*registry.ProviderInfo) []*registry.ProviderInfo {
+	ua, ok := ctxpkg.ContextGetUserAgent(ctx)
+	if !ok {
+		return providers
+	}
+	cat := useragent.GetCategory(ua)
+
+	filters := []*registry.ProviderInfo{}
+	for _, p := range providers {
+		if !s.isFolderHidden(cat, p.ProviderPath) {
+			filters = append(filters, p)
+		}
+	}
+	return filters
+}
+
 func (s *svc) listContainer(ctx context.Context, req *provider.ListContainerRequest) (*provider.ListContainerResponse, error) {
 	providers, err := s.findProviders(ctx, req.Ref)
 	if err != nil {

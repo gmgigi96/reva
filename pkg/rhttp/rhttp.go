@@ -31,6 +31,7 @@ import (
 	"github.com/cs3org/reva/internal/http/interceptors/auth"
 	"github.com/cs3org/reva/internal/http/interceptors/log"
 	"github.com/cs3org/reva/internal/http/interceptors/providerauthorizer"
+	"github.com/cs3org/reva/internal/http/interceptors/useragent"
 	"github.com/cs3org/reva/pkg/rhttp/global"
 	"github.com/cs3org/reva/pkg/rhttp/router"
 	rtrace "github.com/cs3org/reva/pkg/trace"
@@ -282,6 +283,7 @@ func (s *Server) getHandler() (http.Handler, error) {
 	}
 
 	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: authMiddle, Name: "auth"})
+	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: useragent.New(), Name: "useragent"})
 	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: log.New(), Name: "log"})
 	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: appctx.New(s.log), Name: "appctx"})
 
