@@ -283,8 +283,8 @@ func (s *Server) getHandler() (http.Handler, error) {
 	}
 
 	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: authMiddle, Name: "auth"})
-	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: useragent.New(), Name: "useragent"})
 	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: log.New(), Name: "log"})
+	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: useragent.New(), Name: "useragent"})
 	coreMiddlewares = append(coreMiddlewares, &middlewareTriple{Middleware: appctx.New(s.log), Name: "appctx"})
 
 	for _, triple := range coreMiddlewares {
