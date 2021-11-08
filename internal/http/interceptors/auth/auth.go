@@ -281,7 +281,9 @@ func New(m map[string]interface{}, unprotected []string) (global.Middleware, err
 			ctx = ctxpkg.ContextSetToken(ctx, tkn)
 			ctx = metadata.AppendToOutgoingContext(ctx, ctxpkg.TokenHeader, tkn) // TODO(jfd): hardcoded metadata key. use  PerRPCCredentials?
 
-			ctx = metadata.AppendToOutgoingContext(ctx, ctxpkg.UserAgentHeader, r.UserAgent())
+			userAgent := r.UserAgent()
+			ctx = ctxpkg.ContextSetUserAgent(ctx, userAgent)
+			ctx = metadata.AppendToOutgoingContext(ctx, ctxpkg.UserAgentHeader, userAgent)
 
 			r = r.WithContext(ctx)
 			h.ServeHTTP(w, r)
