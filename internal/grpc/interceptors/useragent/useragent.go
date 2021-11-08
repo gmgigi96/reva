@@ -30,10 +30,8 @@ import (
 // the useragent to the context.
 func NewUnary() grpc.UnaryServerInterceptor {
 	interceptor := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			if lst, ok := md[ctxpkg.UserAgentHeader]; ok && len(lst) != 0 {
-				ctx = metadata.AppendToOutgoingContext(ctx, ctxpkg.UserAgentHeader, lst[0])
-			}
+		if ua, ok := ctxpkg.ContextGetUserAgentString(ctx); ok {
+			ctx = metadata.AppendToOutgoingContext(ctx, ctxpkg.UserAgentHeader, ua)
 		}
 		return handler(ctx, req)
 	}
@@ -45,10 +43,8 @@ func NewUnary() grpc.UnaryServerInterceptor {
 func NewStream() grpc.StreamServerInterceptor {
 	interceptor := func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := ss.Context()
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			if lst, ok := md[ctxpkg.UserAgentHeader]; ok && len(lst) != 0 {
-				ctx = metadata.AppendToOutgoingContext(ctx, ctxpkg.UserAgentHeader, lst[0])
-			}
+		if ua, ok := ctxpkg.ContextGetUserAgentString(ctx); ok {
+			ctx = metadata.AppendToOutgoingContext(ctx, ctxpkg.UserAgentHeader, ua)
 		}
 		wrapped := newWrappedServerStream(ctx, ss)
 		return handler(srv, wrapped)
