@@ -1707,7 +1707,12 @@ func (s *svc) listContainerAcrossProviders(ctx context.Context, req *provider.Li
 	nestedInfos := make(map[string]*provider.ResourceInfo)
 	log := appctx.GetLogger(ctx)
 
-	for _, p := range s.filterProvidersByUserAgent(ctx, providers) {
+	if req.Ref.GetPath() == "/" {
+		// filter the content of the folder only if the request folder is the root
+		providers = s.filterProvidersByUserAgent(ctx, providers)
+	}
+
+	for _, p := range providers {
 		c, err := s.getStorageProviderClient(ctx, p)
 		if err != nil {
 			log.Err(err).Msg("error connecting to storage provider=" + p.Address)
