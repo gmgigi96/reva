@@ -526,7 +526,7 @@ func (fs *eosfs) UnsetArbitraryMetadata(ctx context.Context, ref *provider.Refer
 			Key:  k,
 		}
 
-		err := fs.c.UnsetAttr(ctx, auth, attr, fn)
+		err := fs.c.UnsetAttr(ctx, auth, attr, false, fn)
 		if err != nil {
 			return errors.Wrap(err, "eosfs: error unsetting xattr in eos driver")
 		}
@@ -1584,7 +1584,7 @@ func (fs *eosfs) convertToFileReference(ctx context.Context, eosFileInfo *eoscli
 		return nil, err
 	}
 	info.Type = provider.ResourceType_RESOURCE_TYPE_REFERENCE
-	val, ok := eosFileInfo.Attrs["user.reva.target"]
+	val, ok := eosFileInfo.Attrs["reva.target"]
 	if !ok || val == "" {
 		return nil, errtypes.InternalError("eosfs: reference does not contain target: target=" + val + " file=" + eosFileInfo.File)
 	}
@@ -1602,6 +1602,44 @@ func (fs *eosfs) permissionSet(ctx context.Context, eosFileInfo *eosclient.FileI
 	}
 
 	if owner != nil && u.Id.OpaqueId == owner.OpaqueId && u.Id.Idp == owner.Idp {
+		// The logged-in user is the owner but we may be impersonating them
+		// on behalf of a public share accessor.
+
+		if u.Opaque != nil {
+			if publicShare, ok := u.Opaque.Map["public-share-role"]; ok {
+				if string(publicShare.Value) == "editor" {
+					return &provider.ResourcePermissions{
+						CreateContainer:      true,
+						Delete:               true,
+						GetPath:              true,
+						GetQuota:             true,
+						InitiateFileDownload: true,
+						InitiateFileUpload:   true,
+						ListContainer:        true,
+						ListFileVersions:     true,
+						ListGrants:           true,
+						ListRecycle:          true,
+						Move:                 true,
+						PurgeRecycle:         true,
+						RestoreFileVersion:   true,
+						RestoreRecycleItem:   true,
+						Stat:                 true,
+					}
+				} else {
+					return &provider.ResourcePermissions{
+						GetPath:              true,
+						GetQuota:             true,
+						InitiateFileDownload: true,
+						ListContainer:        true,
+						ListFileVersions:     true,
+						ListRecycle:          true,
+						ListGrants:           true,
+						Stat:                 true,
+					}
+				}
+			}
+		}
+
 		return &provider.ResourcePermissions{
 			// owner has all permissions
 			AddGrant:             true,
