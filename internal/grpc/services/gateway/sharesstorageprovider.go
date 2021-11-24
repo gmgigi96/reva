@@ -150,7 +150,7 @@ func (s *svc) listSharesFolder(ctx context.Context) (*provider.ListContainerResp
 			}
 		}
 
-		info.Path = lcr.Infos[i].GetPath()
+		// info.Path = lcr.Infos[i].GetPath()
 		checkedInfos = append(checkedInfos, info)
 	}
 	lcr.Infos = checkedInfos

@@ -776,7 +776,7 @@ func (fs *eosfs) ListGrants(ctx context.Context, ref *provider.Reference) ([]*pr
 
 		grantList = append(grantList, &provider.Grant{
 			Grantee:     grantee,
-			Permissions: grants.GetGrantPermissionSet(a.Permissions, true),
+			Permissions: grants.GetGrantPermissionSet(a.Permissions),
 		})
 	}
 
@@ -1690,7 +1690,7 @@ func (fs *eosfs) permissionSet(ctx context.Context, eosFileInfo *eosclient.FileI
 		}
 
 		if (e.Type == acl.TypeUser && e.Qualifier == auth.Role.UID) || (e.Type == acl.TypeLightweight && e.Qualifier == u.Id.OpaqueId) || userInGroup {
-			mergePermissions(&perm, grants.GetGrantPermissionSet(e.Permissions, eosFileInfo.IsDir))
+			mergePermissions(&perm, grants.GetGrantPermissionSet(e.Permissions))
 		}
 	}
 

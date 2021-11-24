@@ -1356,9 +1356,9 @@ func (s *svc) Stat(ctx context.Context, req *provider.StatRequest) (*provider.St
 		// information. For example, if requests comes to: /home/MyShares/photos and photos
 		// is reference to /user/peter/Holidays/photos, we need to still return to the user
 		// /home/MyShares/photos
-		orgPath := res.Info.Path
+		// orgPath := res.Info.Path
 		res.Info = ri
-		res.Info.Path = orgPath
+		// res.Info.Path = orgPath
 		return res, nil
 
 	}
@@ -1417,7 +1417,7 @@ func (s *svc) Stat(ctx context.Context, req *provider.StatRequest) (*provider.St
 
 		// we need to make sure we don't expose the reference target in the resource
 		// information.
-		res.Info.Path = p
+		// res.Info.Path = p
 		return res, nil
 	}
 
@@ -1705,10 +1705,10 @@ func (s *svc) ListContainer(ctx context.Context, req *provider.ListContainerRequ
 		}
 
 		// paths needs to be converted
-		for _, info := range newRes.Infos {
-			base := path.Base(info.Path)
-			info.Path = path.Join(p, base)
-		}
+		// for _, info := range newRes.Infos {
+		// 	base := path.Base(info.Path)
+		// 	info.Path = path.Join(p, base)
+		// }
 
 		return newRes, nil
 
@@ -1782,10 +1782,10 @@ func (s *svc) ListContainer(ctx context.Context, req *provider.ListContainerRequ
 		}
 
 		// paths needs to be converted
-		for _, info := range newRes.Infos {
-			base := path.Base(info.Path)
-			info.Path = path.Join(shareName, shareChild, base)
-		}
+		// for _, info := range newRes.Infos {
+		// 	base := path.Base(info.Path)
+		// 	info.Path = path.Join(shareName, shareChild, base)
+		// }
 
 		return newRes, nil
 
