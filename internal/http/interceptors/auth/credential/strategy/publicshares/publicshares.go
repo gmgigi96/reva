@@ -59,9 +59,4 @@ func (s *strategy) GetCredentials(w http.ResponseWriter, r *http.Request) (*auth
 
 func (s *strategy) AddWWWAuthenticate(w http.ResponseWriter, r *http.Request, realm string) {
 	// TODO read realm from forwarded header?
-	if realm == "" {
-		// fall back to hostname if not configured
-		realm = r.Host
-	}
-	w.Header().Add("WWW-Authenticate", fmt.Sprintf(`Publicshares realm="%s"`, realm))
 }
