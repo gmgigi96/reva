@@ -28,6 +28,7 @@ import (
 	link "github.com/cs3org/go-cs3apis/cs3/sharing/link/v1beta1"
 	provider "github.com/cs3org/go-cs3apis/cs3/storage/provider/v1beta1"
 	typespb "github.com/cs3org/go-cs3apis/cs3/types/v1beta1"
+	"github.com/cs3org/reva/pkg/storage/utils/grants"
 )
 
 // DBShare stores information about user and public shares.
@@ -117,6 +118,8 @@ func SharePermToInt(p *provider.ResourcePermissions) int {
 		perm = 15
 	} else if p.ListContainer || p.InitiateFileDownload {
 		perm = 1
+	} else if grants.PermissionsEqual(p, &provider.ResourcePermissions{}) {
+		perm = 32
 	}
 	// TODO map denials and resharing; currently, denials are mapped to 0
 	return perm
