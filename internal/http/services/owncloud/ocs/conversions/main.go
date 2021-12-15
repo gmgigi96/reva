@@ -21,12 +21,14 @@ package conversions
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"net/http"
 	"path"
 	"time"
 
 	"github.com/cs3org/reva/pkg/publicshare"
+	"github.com/cs3org/reva/pkg/storage/utils/grants"
 	"github.com/cs3org/reva/pkg/user"
 
 	grouppb "github.com/cs3org/go-cs3apis/cs3/identity/group/v1beta1"
@@ -195,6 +197,22 @@ func CS3Share2ShareData(ctx context.Context, share *collaboration.Share) (*Share
 		sd.ID = share.Id.OpaqueId
 	}
 	if share.GetPermissions() != nil && share.GetPermissions().GetPermissions() != nil {
+		perm := share.GetPermissions().GetPermissions()
+		if grants.PermissionsEqual(perm, &provider.ResourcePermissions{}) {
+			// for a denied permission just add an attribute in the attributes "list"
+			attributes := []map[string]interface{}{
+				{
+					"scope":   "permissions",
+					"key":     "denied",
+					"enabled": true,
+				},
+			}
+			data, err := xml.Marshal(attributes)
+			if err != nil {
+				return nil, err
+			}
+			sd.Attributes = string(data)
+		}
 		sd.Permissions = RoleFromResourcePermissions(share.GetPermissions().GetPermissions()).OCSPermissions()
 	}
 	if share.Ctime != nil {
