@@ -329,6 +329,9 @@ func NewManagerRole() *Role {
 
 // RoleFromOCSPermissions tries to map ocs permissions to a role
 func RoleFromOCSPermissions(p Permissions) *Role {
+	if p.Contain(PermissionNone) {
+		return NewDeniedRole()
+	}
 	if p.Contain(PermissionRead) {
 		if p.Contain(PermissionWrite) && p.Contain(PermissionCreate) && p.Contain(PermissionDelete) {
 			if p.Contain(PermissionShare) {
@@ -342,9 +345,6 @@ func RoleFromOCSPermissions(p Permissions) *Role {
 	}
 	if p == PermissionCreate {
 		return NewUploaderRole()
-	}
-	if p == PermissionNone {
-		return NewDeniedRole()
 	}
 	// legacy
 	return NewLegacyRoleFromOCSPermissions(p)
