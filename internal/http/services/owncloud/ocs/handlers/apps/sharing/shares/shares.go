@@ -262,10 +262,17 @@ func (h *Handler) extractPermissions(w http.ResponseWriter, r *http.Request, ri 
 		}
 	}
 
-	existingPermissions := conversions.RoleFromResourcePermissions(ri.PermissionSet).OCSPermissions()
-	if permissions == conversions.PermissionInvalid || !existingPermissions.Contain(permissions) {
-		response.WriteOCSError(w, r, http.StatusNotFound, "Cannot set the requested share permissions", nil)
-		return nil, nil, errors.New("cannot set the requested share permissions")
+	// add a deny permission only if the user has the grant to deny (ResourcePermissions.DenyGrant == true)
+	if permissions == conversions.PermissionNone {
+		if !ri.PermissionSet.DenyGrant {
+			response.WriteOCSError(w, r, http.StatusNotFound, "Cannot set the requested share permissions: no deny grant on resource", nil)
+		}
+	} else {
+		existingPermissions := conversions.RoleFromResourcePermissions(ri.PermissionSet).OCSPermissions()
+		if permissions == conversions.PermissionInvalid || !existingPermissions.Contain(permissions) {
+			response.WriteOCSError(w, r, http.StatusNotFound, "Cannot set the requested share permissions", nil)
+			return nil, nil, errors.New("cannot set the requested share permissions")
+		}
 	}
 
 	role = conversions.RoleFromOCSPermissions(permissions)
