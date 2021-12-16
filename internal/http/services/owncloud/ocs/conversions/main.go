@@ -21,7 +21,7 @@ package conversions
 
 import (
 	"context"
-	"encoding/xml"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
@@ -207,7 +207,7 @@ func CS3Share2ShareData(ctx context.Context, share *collaboration.Share) (*Share
 					"enabled": true,
 				},
 			}
-			data, err := xml.Marshal(attributes)
+			data, err := json.Marshal(attributes)
 			if err != nil {
 				return nil, err
 			}
