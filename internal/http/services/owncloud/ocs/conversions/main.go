@@ -212,8 +212,10 @@ func CS3Share2ShareData(ctx context.Context, share *collaboration.Share) (*Share
 				return nil, err
 			}
 			sd.Attributes = string(data)
+			sd.Permissions = PermissionRead // just a workaround for all the client that does not support permission > 31
+		} else {
+			sd.Permissions = RoleFromResourcePermissions(share.GetPermissions().GetPermissions()).OCSPermissions()
 		}
-		sd.Permissions = RoleFromResourcePermissions(share.GetPermissions().GetPermissions()).OCSPermissions()
 	}
 	if share.Ctime != nil {
 		sd.STime = share.Ctime.Seconds // TODO CS3 api birth time = btime
