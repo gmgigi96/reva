@@ -397,6 +397,9 @@ func NewLegacyRoleFromOCSPermissions(p Permissions) *Role {
 		r.cS3ResourcePermissions.RemoveGrant = true // TODO when are you able to unshare / delete
 		r.cS3ResourcePermissions.UpdateGrant = true
 	}
+	if p.Contain(PermissionDeny) {
+		r.cS3ResourcePermissions.DenyGrant = true
+	}
 	return r
 }
 
