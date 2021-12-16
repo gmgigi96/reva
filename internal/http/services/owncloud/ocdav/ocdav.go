@@ -96,6 +96,8 @@ type Config struct {
 	// and received path is /docs the internal path will be:
 	// /users/<first char of username>/<username>/docs
 	WebdavNamespace        string                            `mapstructure:"webdav_namespace"`
+	SharesFolder           string                            `mapstructure:"shares_folder"`
+	SharesFolderNamespace  string                            `mapstructure:"shares_folder_namespace"`
 	GatewaySvc             string                            `mapstructure:"gatewaysvc"`
 	Timeout                int64                             `mapstructure:"timeout"`
 	Insecure               bool                              `mapstructure:"insecure"`
@@ -110,6 +112,12 @@ func (c *Config) init() {
 
 	if c.FavoriteStorageDriver == "" {
 		c.FavoriteStorageDriver = "memory"
+	}
+	if c.SharesFolder == "" {
+		c.SharesFolder = "Shares"
+	}
+	if c.SharesFolderNamespace == "" {
+		c.SharesFolderNamespace = "/cernbox/desktop"
 	}
 }
 
@@ -225,6 +233,10 @@ func (s *svc) Handler() http.Handler {
 		case "webdav":
 			// for oc we need to prepend /home as the path that will be passed to the home storage provider
 			// will not contain the username
+			head, _ := router.ShiftPath(r.URL.Path)
+			if head == s.c.SharesFolder {
+				base = path.Join(s.c.SharesFolderNamespace, base)
+			}
 			base = path.Join(base, "webdav")
 			ctx := context.WithValue(ctx, ctxKeyBaseURI, base)
 			r = r.WithContext(ctx)

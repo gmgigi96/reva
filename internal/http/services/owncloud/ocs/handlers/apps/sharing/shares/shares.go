@@ -28,6 +28,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -42,7 +43,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/ReneKroon/ttlcache/v2"
-	"github.com/bluele/gcache"
 	"github.com/cs3org/reva/internal/http/services/owncloud/ocdav"
 	"github.com/cs3org/reva/internal/http/services/owncloud/ocs/config"
 	"github.com/cs3org/reva/internal/http/services/owncloud/ocs/conversions"
@@ -52,7 +52,8 @@ import (
 	"github.com/cs3org/reva/pkg/rgrpc/todo/pool"
 	"github.com/cs3org/reva/pkg/share"
 	"github.com/cs3org/reva/pkg/share/cache"
-	"github.com/cs3org/reva/pkg/share/cache/registry"
+	cachereg "github.com/cs3org/reva/pkg/share/cache/registry"
+	warmupreg "github.com/cs3org/reva/pkg/share/cache/warmup/registry"
 	"github.com/cs3org/reva/pkg/utils"
 	"github.com/cs3org/reva/pkg/utils/resourceid"
 	"github.com/pkg/errors"
@@ -71,7 +72,7 @@ type Handler struct {
 	homeNamespace          string
 	additionalInfoTemplate *template.Template
 	userIdentifierCache    *ttlcache.Cache
-	resourceInfoCache      gcache.Cache
+	resourceInfoCache      cache.ResourceInfoCache
 	resourceInfoCacheTTL   time.Duration
 }
 
@@ -83,10 +84,17 @@ type userIdentifiers struct {
 }
 
 func getCacheWarmupManager(c *config.Config) (cache.Warmup, error) {
-	if f, ok := registry.NewFuncs[c.CacheWarmupDriver]; ok {
+	if f, ok := warmupreg.NewFuncs[c.CacheWarmupDriver]; ok {
 		return f(c.CacheWarmupDrivers[c.CacheWarmupDriver])
 	}
 	return nil, fmt.Errorf("driver not found: %s", c.CacheWarmupDriver)
+}
+
+func getCacheManager(c *config.Config) (cache.ResourceInfoCache, error) {
+	if f, ok := cachereg.NewFuncs[c.ResourceInfoCacheDriver]; ok {
+		return f(c.ResourceInfoCacheDrivers[c.ResourceInfoCacheDriver])
+	}
+	return nil, fmt.Errorf("driver not found: %s", c.ResourceInfoCacheDriver)
 }
 
 // Init initializes this and any contained handlers
@@ -96,13 +104,17 @@ func (h *Handler) Init(c *config.Config) {
 	h.publicURL = c.Config.Host
 	h.sharePrefix = c.SharePrefix
 	h.homeNamespace = c.HomeNamespace
-	h.resourceInfoCache = gcache.New(c.ResourceInfoCacheSize).LFU().Build()
-	h.resourceInfoCacheTTL = time.Second * time.Duration(c.ResourceInfoCacheTTL)
 
 	h.additionalInfoTemplate, _ = template.New("additionalInfo").Parse(c.AdditionalInfoAttribute)
+	h.resourceInfoCacheTTL = time.Second * time.Duration(c.ResourceInfoCacheTTL)
 
 	h.userIdentifierCache = ttlcache.NewCache()
 	_ = h.userIdentifierCache.SetTTL(time.Second * time.Duration(c.UserIdentifierCacheTTL))
+
+	cache, err := getCacheManager(c)
+	if err == nil {
+		h.resourceInfoCache = cache
+	}
 
 	if h.resourceInfoCacheTTL > 0 {
 		cwm, err := getCacheWarmupManager(c)
@@ -654,84 +666,107 @@ func (h *Handler) listSharesWithMe(w http.ResponseWriter, r *http.Request) {
 
 	shares := make([]*conversions.ShareData, 0, len(lrsRes.GetShares()))
 
-	// TODO(refs) filter out "invalid" shares
-	for _, rs := range lrsRes.GetShares() {
-		if stateFilter != ocsStateUnknown && rs.GetState() != stateFilter {
-			continue
-		}
-		var info *provider.ResourceInfo
-		if pinfo != nil {
-			// check if the shared resource matches the path resource
-			if !utils.ResourceIDEqual(rs.Share.ResourceId, pinfo.Id) {
-				// try next share
-				continue
-			}
-			// we can reuse the stat info
-			info = pinfo
-		} else {
-			var status *rpc.Status
-			info, status, err = h.getResourceInfoByID(ctx, client, rs.Share.ResourceId)
-			if err != nil || status.Code != rpc.Code_CODE_OK {
-				h.logProblems(status, err, "could not stat, skipping")
-				continue
-			}
-		}
+	var wg sync.WaitGroup
+	workers := 50
+	input := make(chan *collaboration.ReceivedShare, len(lrsRes.GetShares()))
+	output := make(chan *conversions.ShareData, len(lrsRes.GetShares()))
 
-		data, err := conversions.CS3Share2ShareData(r.Context(), rs.Share)
-		if err != nil {
-			log.Debug().Interface("share", rs.Share).Interface("shareData", data).Err(err).Msg("could not CS3Share2ShareData, skipping")
-			continue
-		}
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(ctx context.Context, client gateway.GatewayAPIClient, input chan *collaboration.ReceivedShare, output chan *conversions.ShareData, wg *sync.WaitGroup) {
+			defer wg.Done()
 
-		data.State = mapState(rs.GetState())
-
-		if err := h.addFileInfo(ctx, data, info); err != nil {
-			log.Debug().Interface("received_share", rs).Interface("info", info).Interface("shareData", data).Err(err).Msg("could not add file info, skipping")
-			continue
-		}
-		h.mapUserIds(r.Context(), client, data)
-
-		if data.State == ocsStateAccepted {
-			// only accepted shares can be accessed when jailing users into their home.
-			// in this case we cannot stat shared resources that are outside the users home (/home),
-			// the path (/users/u-u-i-d/foo) will not be accessible
-
-			// in a global namespace we can access the share using the full path
-			// in a jailed namespace we have to point to the mount point in the users /Shares jail
-			// - needed for oc10 hot migration
-			// or use the /dav/spaces/<space id> endpoint?
-
-			// list /Shares and match fileids with list of received shares
-			// - only works for a /Shares folder jail
-			// - does not work for freely mountable shares as in oc10 because we would need to iterate over the whole tree, there is no listing of mountpoints, yet
-
-			// can we return the mountpoint when the gateway resolves the listing of shares?
-			// - no, the gateway only sees the same list any has the same options as the ocs service
-			// - we would need to have a list of mountpoints for the shares -> owncloudstorageprovider for hot migration migration
-
-			// best we can do for now is stat the /Shares jail if it is set and return those paths
-
-			// if we are in a jail and the current share has been accepted use the stat from the share jail
-			// Needed because received shares can be jailed in a folder in the users home
-
-			if h.sharePrefix != "/" {
-				// if we have share jail infos use them to build the path
-				if sji := findMatch(shareJailInfos, rs.Share.ResourceId); sji != nil {
-					// override path with info from share jail
-					data.FileTarget = path.Join(h.sharePrefix, path.Base(sji.Path))
-					data.Path = path.Join(h.sharePrefix, path.Base(sji.Path))
-				} else {
-					data.FileTarget = path.Join(h.sharePrefix, path.Base(info.Path))
-					data.Path = path.Join(h.sharePrefix, path.Base(info.Path))
+			for rs := range input {
+				if stateFilter != ocsStateUnknown && rs.GetState() != stateFilter {
+					return
 				}
-			} else {
-				data.FileTarget = info.Path
-				data.Path = info.Path
-			}
-		}
+				var info *provider.ResourceInfo
+				if pinfo != nil {
+					// check if the shared resource matches the path resource
+					if !utils.ResourceIDEqual(rs.Share.ResourceId, pinfo.Id) {
+						// try next share
+						return
+					}
+					// we can reuse the stat info
+					info = pinfo
+				} else {
+					var status *rpc.Status
+					info, status, err = h.getResourceInfoByID(ctx, client, rs.Share.ResourceId)
+					if err != nil || status.Code != rpc.Code_CODE_OK {
+						h.logProblems(status, err, "could not stat, skipping")
+						return
+					}
 
-		shares = append(shares, data)
-		log.Debug().Msgf("share: %+v", *data)
+				}
+
+				data, err := conversions.CS3Share2ShareData(r.Context(), rs.Share)
+				if err != nil {
+					log.Debug().Interface("share", rs.Share).Interface("shareData", data).Err(err).Msg("could not CS3Share2ShareData, skipping")
+					return
+				}
+
+				data.State = mapState(rs.GetState())
+
+				if err := h.addFileInfo(ctx, data, info); err != nil {
+					log.Debug().Interface("received_share", rs).Interface("info", info).Interface("shareData", data).Err(err).Msg("could not add file info, skipping")
+					return
+				}
+				h.mapUserIds(r.Context(), client, data)
+
+				if data.State == ocsStateAccepted {
+					// only accepted shares can be accessed when jailing users into their home.
+					// in this case we cannot stat shared resources that are outside the users home (/home),
+					// the path (/users/u-u-i-d/foo) will not be accessible
+
+					// in a global namespace we can access the share using the full path
+					// in a jailed namespace we have to point to the mount point in the users /Shares jail
+					// - needed for oc10 hot migration
+					// or use the /dav/spaces/<space id> endpoint?
+
+					// list /Shares and match fileids with list of received shares
+					// - only works for a /Shares folder jail
+					// - does not work for freely mountable shares as in oc10 because we would need to iterate over the whole tree, there is no listing of mountpoints, yet
+
+					// can we return the mountpoint when the gateway resolves the listing of shares?
+					// - no, the gateway only sees the same list any has the same options as the ocs service
+					// - we would need to have a list of mountpoints for the shares -> owncloudstorageprovider for hot migration migration
+
+					// best we can do for now is stat the /Shares jail if it is set and return those paths
+
+					// if we are in a jail and the current share has been accepted use the stat from the share jail
+					// Needed because received shares can be jailed in a folder in the users home
+
+					if h.sharePrefix != "/" {
+						// if we have share jail infos use them to build the path
+						if sji := findMatch(shareJailInfos, rs.Share.ResourceId); sji != nil {
+							// override path with info from share jail
+							data.FileTarget = path.Join(h.sharePrefix, path.Base(sji.Path))
+							data.Path = path.Join(h.sharePrefix, path.Base(sji.Path))
+						} else {
+							data.FileTarget = path.Join(h.sharePrefix, path.Base(info.Path))
+							data.Path = path.Join(h.sharePrefix, path.Base(info.Path))
+						}
+					} else {
+						data.FileTarget = info.Path
+						data.Path = info.Path
+					}
+				}
+
+				log.Debug().Msgf("share: %+v", data)
+				output <- data
+			}
+		}(ctx, client, input, output, &wg)
+	}
+
+	for _, share := range lrsRes.GetShares() {
+		input <- share
+	}
+	close(input)
+	wg.Wait()
+	close(output)
+
+	for s := range output {
+		shares = append(shares, s)
 	}
 
 	response.WriteOCSSuccess(w, r, shares)
@@ -925,6 +960,7 @@ func (h *Handler) mustGetIdentifiers(ctx context.Context, client gateway.Gateway
 			GroupId: &grouppb.GroupId{
 				OpaqueId: id,
 			},
+			SkipFetchingMembers: true,
 		})
 		if err != nil {
 			sublog.Err(err).Msg("could not look up group")
@@ -954,6 +990,7 @@ func (h *Handler) mustGetIdentifiers(ctx context.Context, client gateway.Gateway
 			UserId: &userpb.UserId{
 				OpaqueId: id,
 			},
+			SkipFetchingUserGroups: true,
 		})
 		if err != nil {
 			sublog.Err(err).Msg("could not look up user")
@@ -1046,11 +1083,16 @@ func (h *Handler) getResourceInfo(ctx context.Context, client gateway.GatewayAPI
 
 	var pinfo *provider.ResourceInfo
 	var status *rpc.Status
-	if infoIf, err := h.resourceInfoCache.Get(key); h.resourceInfoCacheTTL > 0 && err == nil {
-		logger.Debug().Msgf("cache hit for resource %+v", key)
-		pinfo = infoIf.(*provider.ResourceInfo)
-		status = &rpc.Status{Code: rpc.Code_CODE_OK}
-	} else {
+	var err error
+	var foundInCache bool
+	if h.resourceInfoCacheTTL > 0 && h.resourceInfoCache != nil {
+		if pinfo, err = h.resourceInfoCache.Get(key); err == nil {
+			logger.Debug().Msgf("cache hit for resource %+v", key)
+			status = &rpc.Status{Code: rpc.Code_CODE_OK}
+			foundInCache = true
+		}
+	}
+	if !foundInCache {
 		logger.Debug().Msgf("cache miss for resource %+v, statting", key)
 		statReq := &provider.StatRequest{
 			Ref: ref,

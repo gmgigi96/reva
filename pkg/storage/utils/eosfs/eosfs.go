@@ -526,7 +526,7 @@ func (fs *eosfs) UnsetArbitraryMetadata(ctx context.Context, ref *provider.Refer
 			Key:  k,
 		}
 
-		err := fs.c.UnsetAttr(ctx, auth, attr, fn)
+		err := fs.c.UnsetAttr(ctx, auth, attr, false, fn)
 		if err != nil {
 			return errors.Wrap(err, "eosfs: error unsetting xattr in eos driver")
 		}
@@ -776,7 +776,7 @@ func (fs *eosfs) ListGrants(ctx context.Context, ref *provider.Reference) ([]*pr
 
 		grantList = append(grantList, &provider.Grant{
 			Grantee:     grantee,
-			Permissions: grants.GetGrantPermissionSet(a.Permissions, true),
+			Permissions: grants.GetGrantPermissionSet(a.Permissions),
 		})
 	}
 
@@ -791,7 +791,18 @@ func (fs *eosfs) GetMD(ctx context.Context, ref *provider.Reference, mdKeys []st
 	if err != nil {
 		return nil, err
 	}
-	auth, err := fs.getUserAuth(ctx, u, "")
+
+	fn := ""
+	if u.Id.Type == userpb.UserType_USER_TYPE_LIGHTWEIGHT {
+		p, err := fs.resolve(ctx, ref)
+		if err != nil {
+			return nil, errors.Wrap(err, "eosfs: error resolving reference")
+		}
+
+		fn = fs.wrap(ctx, p)
+	}
+
+	auth, err := fs.getUserAuth(ctx, u, fn)
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +829,7 @@ func (fs *eosfs) GetMD(ctx context.Context, ref *provider.Reference, mdKeys []st
 		}
 	}
 
-	fn := fs.wrap(ctx, p)
+	fn = fs.wrap(ctx, p)
 	eosFileInfo, err := fs.c.GetFileInfoByPath(ctx, auth, fn)
 	if err != nil {
 		return nil, err
@@ -858,11 +869,22 @@ func (fs *eosfs) ListFolder(ctx context.Context, ref *provider.Reference, mdKeys
 		return nil, errors.Wrap(err, "eosfs: error resolving reference")
 	}
 
-	// if path is home we need to add in the response any shadow folder in the shadow homedirectory.
 	if fs.conf.EnableHome {
 		return fs.listWithHome(ctx, p)
 	}
+	return fs.listWithNominalHome(ctx, p)
+}
 
+func (fs *eosfs) listWithHome(ctx context.Context, p string) ([]*provider.ResourceInfo, error) {
+	if fs.isShareFolderRoot(ctx, p) {
+		return fs.listShareFolderRoot(ctx, p)
+	}
+
+	if fs.isShareFolderChild(ctx, p) {
+		return nil, errtypes.PermissionDenied("eos: error listing folders inside the shared folder, only file references are stored inside")
+	}
+
+	// path points to a resource in the nominal home
 	return fs.listWithNominalHome(ctx, p)
 }
 
@@ -895,66 +917,12 @@ func (fs *eosfs) listWithNominalHome(ctx context.Context, p string) (finfos []*p
 		}
 
 		// Remove the hidden folders in the topmost directory
-		if finfo, err := fs.convertToResourceInfo(ctx, eosFileInfo); err == nil && finfo.Path != "/" && !strings.HasPrefix(finfo.Path, "/.") {
+		if finfo, err := fs.convertToResourceInfo(ctx, eosFileInfo); err == nil &&
+			finfo.Path != "/" && !strings.HasPrefix(finfo.Path, "/.") {
 			finfos = append(finfos, finfo)
 		}
 	}
 
-	return finfos, nil
-}
-
-func (fs *eosfs) listWithHome(ctx context.Context, p string) ([]*provider.ResourceInfo, error) {
-	if p == "/" {
-		return fs.listHome(ctx)
-	}
-
-	if fs.isShareFolderRoot(ctx, p) {
-		return fs.listShareFolderRoot(ctx, p)
-	}
-
-	if fs.isShareFolderChild(ctx, p) {
-		return nil, errtypes.PermissionDenied("eosfs: error listing folders inside the shared folder, only file references are stored inside")
-	}
-
-	// path points to a resource in the nominal home
-	return fs.listWithNominalHome(ctx, p)
-}
-
-func (fs *eosfs) listHome(ctx context.Context) ([]*provider.ResourceInfo, error) {
-	fns := []string{fs.wrap(ctx, "/"), fs.wrapShadow(ctx, "/")}
-
-	u, err := getUser(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "eosfs: no user in ctx")
-	}
-	// lightweight accounts don't have home folders, so we're passing an empty string as path
-	auth, err := fs.getUserAuth(ctx, u, "")
-	if err != nil {
-		return nil, err
-	}
-
-	finfos := []*provider.ResourceInfo{}
-	for _, fn := range fns {
-		eosFileInfos, err := fs.c.List(ctx, auth, fn)
-		if err != nil {
-			return nil, errors.Wrap(err, "eosfs: error listing")
-		}
-
-		for _, eosFileInfo := range eosFileInfos {
-			// filter out sys files
-			if !fs.conf.ShowHiddenSysFiles {
-				base := path.Base(eosFileInfo.File)
-				if hiddenReg.MatchString(base) {
-					continue
-				}
-			}
-
-			if finfo, err := fs.convertToResourceInfo(ctx, eosFileInfo); err == nil && finfo.Path != "/" && !strings.HasPrefix(finfo.Path, "/.") {
-				finfos = append(finfos, finfo)
-			}
-		}
-
-	}
 	return finfos, nil
 }
 
@@ -1627,7 +1595,7 @@ func (fs *eosfs) convertToFileReference(ctx context.Context, eosFileInfo *eoscli
 		return nil, err
 	}
 	info.Type = provider.ResourceType_RESOURCE_TYPE_REFERENCE
-	val, ok := eosFileInfo.Attrs["user.reva.target"]
+	val, ok := eosFileInfo.Attrs["reva.target"]
 	if !ok || val == "" {
 		return nil, errtypes.InternalError("eosfs: reference does not contain target: target=" + val + " file=" + eosFileInfo.File)
 	}
@@ -1645,6 +1613,44 @@ func (fs *eosfs) permissionSet(ctx context.Context, eosFileInfo *eosclient.FileI
 	}
 
 	if owner != nil && u.Id.OpaqueId == owner.OpaqueId && u.Id.Idp == owner.Idp {
+		// The logged-in user is the owner but we may be impersonating them
+		// on behalf of a public share accessor.
+
+		if u.Opaque != nil {
+			if publicShare, ok := u.Opaque.Map["public-share-role"]; ok {
+				if string(publicShare.Value) == "editor" {
+					return &provider.ResourcePermissions{
+						CreateContainer:      true,
+						Delete:               true,
+						GetPath:              true,
+						GetQuota:             true,
+						InitiateFileDownload: true,
+						InitiateFileUpload:   true,
+						ListContainer:        true,
+						ListFileVersions:     true,
+						ListGrants:           true,
+						ListRecycle:          true,
+						Move:                 true,
+						PurgeRecycle:         true,
+						RestoreFileVersion:   true,
+						RestoreRecycleItem:   true,
+						Stat:                 true,
+					}
+				} else {
+					return &provider.ResourcePermissions{
+						GetPath:              true,
+						GetQuota:             true,
+						InitiateFileDownload: true,
+						ListContainer:        true,
+						ListFileVersions:     true,
+						ListRecycle:          true,
+						ListGrants:           true,
+						Stat:                 true,
+					}
+				}
+			}
+		}
+
 		return &provider.ResourcePermissions{
 			// owner has all permissions
 			AddGrant:             true,
@@ -1695,7 +1701,7 @@ func (fs *eosfs) permissionSet(ctx context.Context, eosFileInfo *eosclient.FileI
 		}
 
 		if (e.Type == acl.TypeUser && e.Qualifier == auth.Role.UID) || (e.Type == acl.TypeLightweight && e.Qualifier == u.Id.OpaqueId) || userInGroup {
-			mergePermissions(&perm, grants.GetGrantPermissionSet(e.Permissions, eosFileInfo.IsDir))
+			mergePermissions(&perm, grants.GetGrantPermissionSet(e.Permissions))
 		}
 	}
 
@@ -1826,7 +1832,8 @@ func (fs *eosfs) getUIDGateway(ctx context.Context, u *userpb.UserId) (eosclient
 		return eosclient.Authorization{}, errors.Wrap(err, "eosfs: error getting gateway grpc client")
 	}
 	getUserResp, err := client.GetUser(ctx, &userpb.GetUserRequest{
-		UserId: u,
+		UserId:                 u,
+		SkipFetchingUserGroups: true,
 	})
 	if err != nil {
 		_ = fs.userIDCache.SetWithTTL(u.OpaqueId, &userpb.User{}, 12*time.Hour)
@@ -1859,8 +1866,9 @@ func (fs *eosfs) getUserIDGateway(ctx context.Context, uid string) (*userpb.User
 		return nil, errors.Wrap(err, "eosfs: error getting gateway grpc client")
 	}
 	getUserResp, err := client.GetUserByClaim(ctx, &userpb.GetUserByClaimRequest{
-		Claim: "uid",
-		Value: uid,
+		Claim:                  "uid",
+		Value:                  uid,
+		SkipFetchingUserGroups: true,
 	})
 	if err != nil {
 		// Insert an empty object in the cache so that we don't make another call

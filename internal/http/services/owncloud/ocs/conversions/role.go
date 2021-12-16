@@ -347,6 +347,9 @@ func RoleFromOCSPermissions(p Permissions) *Role {
 	if p == PermissionCreate {
 		return NewUploaderRole()
 	}
+	if p == PermissionNone {
+		return NewDeniedRole()
+	}
 	// legacy
 	return NewLegacyRoleFromOCSPermissions(p)
 }
@@ -461,6 +464,10 @@ func RoleFromResourcePermissions(rp *provider.ResourcePermissions) *Role {
 	}
 	if r.ocsPermissions == PermissionCreate {
 		r.Name = RoleUploader
+		return r
+	}
+	if r.ocsPermissions == PermissionNone {
+		r.Name = RoleDenied
 		return r
 	}
 	r.Name = RoleLegacy
