@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	provider "github.com/cs3org/go-cs3apis/cs3/storage/provider/v1beta1"
+	"github.com/cs3org/reva/pkg/storage/utils/grants"
 )
 
 // Role is a set of ocs permissions and cs3 resource permissions under a common name.
@@ -406,6 +407,11 @@ func RoleFromResourcePermissions(rp *provider.ResourcePermissions) *Role {
 	if rp == nil {
 		return r
 	}
+	if grants.PermissionsEqual(rp, &provider.ResourcePermissions{}) {
+		r.ocsPermissions = PermissionNone
+		r.Name = RoleDenied
+		return r
+	}
 	if rp.ListContainer &&
 		rp.ListGrants &&
 		rp.ListFileVersions &&
@@ -455,10 +461,6 @@ func RoleFromResourcePermissions(rp *provider.ResourcePermissions) *Role {
 	}
 	if r.ocsPermissions == PermissionCreate {
 		r.Name = RoleUploader
-		return r
-	}
-	if r.ocsPermissions == PermissionNone {
-		r.Name = RoleDenied
 		return r
 	}
 	r.Name = RoleLegacy
