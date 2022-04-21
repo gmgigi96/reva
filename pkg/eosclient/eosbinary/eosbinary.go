@@ -113,10 +113,6 @@ type Options struct {
 	// Default is /usr/bin/eos.
 	EosBinary string
 
-	// Location of the xrdcopy binary.
-	// Default is /opt/eos/xrootd/bin/xrdcopy.
-	XrdcopyBinary string
-
 	// URL of the EOS MGM.
 	// Default is root://eos-example.org
 	URL string
@@ -147,10 +143,6 @@ func (opt *Options) init() {
 
 	if opt.EosBinary == "" {
 		opt.EosBinary = "/usr/bin/eos"
-	}
-
-	if opt.XrdcopyBinary == "" {
-		opt.XrdcopyBinary = "/opt/eos/xrootd/bin/xrdcopy"
 	}
 
 	if opt.URL == "" {

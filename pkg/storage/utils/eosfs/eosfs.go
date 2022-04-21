@@ -188,7 +188,6 @@ func NewEOSFS(c *Config) (storage.FS, error) {
 		eosClient, err = eosgrpc.New(eosClientOpts, eosHTTPOpts)
 	} else {
 		eosClientOpts := &eosbinary.Options{
-			XrdcopyBinary:       c.XrdcopyBinary,
 			URL:                 c.MasterURL,
 			EosBinary:           c.EosBinary,
 			CacheDirectory:      c.CacheDirectory,
