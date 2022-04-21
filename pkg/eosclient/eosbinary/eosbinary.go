@@ -724,7 +724,7 @@ func (c *Client) Read(ctx context.Context, auth eosclient.Authorization, path st
 
 	encodedPath := encodeAuth(path, auth)
 
-	f, err := xrdio.OpenFrom(client.FS(), encodedPath)
+	f, err := xrdio.OpenFromModeOptions(client.FS(), encodedPath, xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead|xrdfs.OpenOptionsAsync)
 	if err != nil {
 		_ = client.Close()
 		return nil, err
@@ -759,7 +759,7 @@ func (c *Client) Write(ctx context.Context, auth eosclient.Authorization, path s
 
 	encodedPath := encodeAuth(path, auth)
 
-	f, err := xrdio.OpenFromModeOptions(client.FS(), encodedPath, xrdfs.OpenModeGroupWrite, xrdfs.OpenOptionsDelete|xrdfs.OpenOptionsNew)
+	f, err := xrdio.OpenFromModeOptions(client.FS(), encodedPath, xrdfs.OpenModeOwnerWrite, xrdfs.OpenOptionsDelete|xrdfs.OpenOptionsNew)
 	if err != nil {
 		_ = client.Close()
 		return err
