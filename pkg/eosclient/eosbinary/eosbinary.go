@@ -19,6 +19,7 @@
 package eosbinary
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -121,6 +122,8 @@ type Options struct {
 	// derived from URL removing the root:// prefix
 	mgmEndpointURL string
 
+	ReadBuffer int
+
 	// Location on the local fs where to store reads.
 	// Defaults to os.TempDir()
 	CacheDirectory string
@@ -152,6 +155,10 @@ func (opt *Options) init() {
 
 	if opt.CacheDirectory == "" {
 		opt.CacheDirectory = os.TempDir()
+	}
+
+	if opt.ReadBuffer == 0 {
+		opt.ReadBuffer = 64 * 1024 // 64KB
 	}
 
 	opt.mgmEndpointURL = strings.TrimPrefix(opt.URL, "root://")
@@ -693,15 +700,17 @@ func (c *Client) List(ctx context.Context, auth eosclient.Authorization, path st
 type xrdReader struct {
 	client *xrootd.Client
 	file   *xrdio.File
+	r      io.ReadCloser
 }
 
 func (r *xrdReader) Read(p []byte) (int, error) {
-	return r.file.Read(p)
+	return r.r.Read(p)
 }
 
 func (r *xrdReader) Close() error {
 	defer r.client.Close()
-	return r.file.Close()
+	defer r.file.Close()
+	return r.r.Close()
 }
 
 // Read reads a file from the mgm
@@ -721,7 +730,9 @@ func (c *Client) Read(ctx context.Context, auth eosclient.Authorization, path st
 		return nil, err
 	}
 
-	return &xrdReader{client: client, file: f}, nil
+	buf := bufio.NewReaderSize(f, c.opt.ReadBuffer)
+
+	return &xrdReader{client: client, r: io.NopCloser(buf), file: f}, nil
 }
 
 func encodeAuth(path string, auth eosclient.Authorization) string {
