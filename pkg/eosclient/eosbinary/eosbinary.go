@@ -38,8 +38,9 @@ import (
 	"github.com/cs3org/reva/pkg/eosclient"
 	"github.com/cs3org/reva/pkg/errtypes"
 	"github.com/cs3org/reva/pkg/storage/utils/acl"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go-hep.org/x/hep/xrootd"
+	"go-hep.org/x/hep/xrootd/xrdio"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -121,6 +122,9 @@ type Options struct {
 	// Default is root://eos-example.org
 	URL string
 
+	// derived from URL removing the root:// prefix
+	mgmEndpointURL string
+
 	// Location on the local fs where to store reads.
 	// Defaults to os.TempDir()
 	CacheDirectory string
@@ -171,57 +175,6 @@ func New(opt *Options) (*Client, error) {
 	c := new(Client)
 	c.opt = opt
 	return c, nil
-}
-
-// executeXRDCopy executes xrdcpy commands and returns the stdout, stderr and return code
-func (c *Client) executeXRDCopy(ctx context.Context, cmdArgs []string) (string, string, error) {
-	log := appctx.GetLogger(ctx)
-
-	outBuf := &bytes.Buffer{}
-	errBuf := &bytes.Buffer{}
-
-	cmd := exec.CommandContext(ctx, c.opt.XrdcopyBinary, cmdArgs...)
-	cmd.Stdout = outBuf
-	cmd.Stderr = errBuf
-	cmd.Env = []string{
-		"EOS_MGM_URL=" + c.opt.URL,
-	}
-
-	if c.opt.UseKeytab {
-		cmd.Env = append(cmd.Env, "XrdSecPROTOCOL="+c.opt.SecProtocol)
-		cmd.Env = append(cmd.Env, "XrdSecSSSKT="+c.opt.Keytab)
-	}
-
-	err := cmd.Run()
-
-	var exitStatus int
-	if exiterr, ok := err.(*exec.ExitError); ok {
-		// The program has exited with an exit code != 0
-		// This works on both Unix and Windows. Although package
-		// syscall is generally platform dependent, WaitStatus is
-		// defined for both Unix and Windows and in both cases has
-		// an ExitStatus() method with the same signature.
-		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-
-			exitStatus = status.ExitStatus()
-			switch exitStatus {
-			case 0:
-				err = nil
-			case int(syscall.ENOENT):
-				err = errtypes.NotFound(errBuf.String())
-			}
-		}
-	}
-
-	args := fmt.Sprintf("%s", cmd.Args)
-	env := fmt.Sprintf("%s", cmd.Env)
-	log.Info().Str("args", args).Str("env", env).Int("exit", exitStatus).Msg("eos cmd")
-
-	if err != nil && exitStatus != int(syscall.ENOENT) { // don't wrap the errtypes.NotFoundError
-		err = errors.Wrap(err, "eosclient: error while executing command")
-	}
-
-	return outBuf.String(), errBuf.String(), err
 }
 
 // exec executes only EOS commands the command and returns the stdout, stderr and return code.
@@ -743,26 +696,48 @@ func (c *Client) List(ctx context.Context, auth eosclient.Authorization, path st
 	return c.parseFind(ctx, auth, path, stdout)
 }
 
+type xrdReader struct {
+	client *xrootd.Client
+	file   *xrdio.File
+}
+
+func (r *xrdReader) Read(p []byte) (int, error) {
+	return r.file.Read(p)
+}
+
+func (r *xrdReader) Close() error {
+	defer r.client.Close()
+	return r.file.Close()
+}
+
 // Read reads a file from the mgm
 func (c *Client) Read(ctx context.Context, auth eosclient.Authorization, path string) (io.ReadCloser, error) {
-	rand := "eosread-" + uuid.New().String()
-	localTarget := fmt.Sprintf("%s/%s", c.opt.CacheDirectory, rand)
-	defer os.RemoveAll(localTarget)
+	user := ctxpkg.ContextMustGetUser(ctx)
 
-	xrdPath := fmt.Sprintf("%s//%s", c.opt.URL, path)
-	args := []string{"--nopbar", "--silent", "-f", xrdPath, localTarget}
-
-	if auth.Token != "" {
-		args[3] += "?authz=" + auth.Token
-	} else if auth.Role.UID != "" && auth.Role.GID != "" {
-		args = append(args, fmt.Sprintf("-OSeos.ruid=%s&eos.rgid=%s", auth.Role.UID, auth.Role.GID))
-	}
-
-	_, _, err := c.executeXRDCopy(ctx, args)
+	client, err := xrootd.NewClient(ctx, c.opt.mgmEndpointURL, user.Username)
 	if err != nil {
 		return nil, err
 	}
-	return os.Open(localTarget)
+
+	encodedPath := encodeAuth(path, auth)
+
+	f, err := xrdio.OpenFrom(client.FS(), encodedPath)
+	if err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+
+	return &xrdReader{client: client, file: f}, nil
+}
+
+func encodeAuth(path string, auth eosclient.Authorization) string {
+	var authStr string
+	if auth.Token != "" {
+		authStr = "authz=" + auth.Token
+	} else if auth.Role.UID != "" && auth.Role.GID != "" {
+		authStr = fmt.Sprintf("eos.ruid=%s&eos.rgid=%s", auth.Role.UID, auth.Role.GID)
+	}
+	return fmt.Sprintf("%s?%s", path, authStr)
 }
 
 // Write writes a stream to the mgm
