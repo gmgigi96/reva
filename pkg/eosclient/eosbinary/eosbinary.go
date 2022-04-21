@@ -152,6 +152,8 @@ func (opt *Options) init() {
 	if opt.CacheDirectory == "" {
 		opt.CacheDirectory = os.TempDir()
 	}
+
+	opt.mgmEndpointURL = strings.TrimPrefix(opt.URL, "root://")
 }
 
 // Client performs actions against a EOS management node (MGM).
