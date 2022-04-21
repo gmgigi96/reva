@@ -39,6 +39,7 @@ import (
 	"github.com/cs3org/reva/pkg/storage/utils/acl"
 	"github.com/pkg/errors"
 	"go-hep.org/x/hep/xrootd"
+	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdio"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -747,7 +748,7 @@ func (c *Client) Write(ctx context.Context, auth eosclient.Authorization, path s
 
 	encodedPath := encodeAuth(path, auth)
 
-	f, err := xrdio.OpenFrom(client.FS(), encodedPath)
+	f, err := xrdio.OpenFromModeOptions(client.FS(), encodedPath, xrdfs.OpenModeGroupWrite, xrdfs.OpenOptionsDelete|xrdfs.OpenOptionsNew)
 	if err != nil {
 		_ = client.Close()
 		return err
