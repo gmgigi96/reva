@@ -23,7 +23,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -742,35 +741,38 @@ func encodeAuth(path string, auth eosclient.Authorization) string {
 
 // Write writes a stream to the mgm
 func (c *Client) Write(ctx context.Context, auth eosclient.Authorization, path string, stream io.ReadCloser) error {
-	fd, err := ioutil.TempFile(c.opt.CacheDirectory, "eoswrite-")
+	// TODO (gdelmont): the stream in the parameter could be easily an io.Reader
+	// as the responsability to close this is of the caller
+	user := ctxpkg.ContextMustGetUser(ctx)
+
+	client, err := xrootd.NewClient(ctx, c.opt.mgmEndpointURL, user.Username)
 	if err != nil {
 		return err
 	}
-	defer fd.Close()
-	defer os.RemoveAll(fd.Name())
+	defer client.Close()
 
-	// copy stream to local temp file
-	_, err = io.Copy(fd, stream)
+	encodedPath := encodeAuth(path, auth)
+
+	f, err := xrdio.OpenFrom(client.FS(), encodedPath)
 	if err != nil {
+		_ = client.Close()
 		return err
 	}
 
-	return c.WriteFile(ctx, auth, path, fd.Name())
+	_, err = io.Copy(f, stream)
+	return err
 }
 
 // WriteFile writes an existing file to the mgm
 func (c *Client) WriteFile(ctx context.Context, auth eosclient.Authorization, path, source string) error {
-	xrdPath := fmt.Sprintf("%s//%s", c.opt.URL, path)
-	args := []string{"--nopbar", "--silent", "-f", source, xrdPath}
-
-	if auth.Token != "" {
-		args[4] += "?authz=" + auth.Token
-	} else if auth.Role.UID != "" && auth.Role.GID != "" {
-		args = append(args, fmt.Sprintf("-ODeos.ruid=%s&eos.rgid=%s", auth.Role.UID, auth.Role.GID))
+	// the source is a local file
+	f, err := os.Open(source)
+	if err != nil {
+		return err
 	}
+	defer f.Close()
 
-	_, _, err := c.executeXRDCopy(ctx, args)
-	return err
+	return c.Write(ctx, auth, path, f)
 }
 
 // ListDeletedEntries returns a list of the deleted entries.
