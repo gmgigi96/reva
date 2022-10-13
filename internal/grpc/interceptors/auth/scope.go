@@ -164,6 +164,11 @@ func checkLightweightScope(ctx context.Context, req interface{}, tokenScope map[
 		return hasPermissions(ctx, client, parent, &provider.ResourcePermissions{
 			InitiateFileUpload: true,
 		})
+
+	// App provider
+	case *appregistry.GetAppProvidersRequest:
+		return true
+
 	}
 
 	return false
