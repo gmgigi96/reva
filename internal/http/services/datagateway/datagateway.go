@@ -32,6 +32,7 @@ import (
 	"github.com/cs3org/reva/pkg/rhttp"
 	"github.com/cs3org/reva/pkg/rhttp/global"
 	"github.com/cs3org/reva/pkg/sharedconf"
+	"github.com/cs3org/reva/pkg/utils"
 	"github.com/golang-jwt/jwt"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
@@ -294,7 +295,7 @@ func (s *svc) doPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetURL.RawQuery = r.URL.RawQuery
+	targetURL.RawQuery = utils.MergeQueryParams(r.URL.RawQuery, targetURL.RawQuery)
 	target = targetURL.String()
 
 	log.Debug().Str("target", claims.Target).Msg("sending request to internal data server")

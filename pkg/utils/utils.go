@@ -389,3 +389,16 @@ func UserIsLightweight(u *userpb.User) bool {
 	return u.Id.Type == userpb.UserType_USER_TYPE_FEDERATED ||
 		u.Id.Type == userpb.UserType_USER_TYPE_LIGHTWEIGHT
 }
+
+func MergeQueryParams(raw ...string) string {
+	var b strings.Builder
+	for _, q := range raw {
+		if q != "" {
+			b.WriteString("&" + q)
+		}
+	}
+	if b.Len() > 0 {
+		return b.String()[1:]
+	}
+	return ""
+}
