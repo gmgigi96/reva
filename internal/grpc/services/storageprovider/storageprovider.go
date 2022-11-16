@@ -516,6 +516,7 @@ func (s *service) InitiateFileUpload(ctx context.Context, req *provider.Initiate
 	for protocol, ID := range uploadIDs {
 		u := *s.dataServerURL
 		u.Path = path.Join(u.Path, protocol, ID)
+		addUploadOption(&u, req)
 		protocols[i] = &provider.FileUploadProtocol{
 			Protocol:           protocol,
 			UploadEndpoint:     u.String(),
@@ -534,6 +535,17 @@ func (s *service) InitiateFileUpload(ctx context.Context, req *provider.Initiate
 		Status:    status.NewOK(ctx),
 	}
 	return res, nil
+}
+
+func addUploadOption(u *url.URL, req *provider.InitiateFileUploadRequest) {
+	q := u.Query()
+	switch o := req.Options.(type) {
+	case *provider.InitiateFileUploadRequest_IfNotExist:
+		q.Set("if_not_exist", strconv.FormatBool(o.IfNotExist))
+	default:
+		// TODO (gdelmont): support other options as well
+	}
+	u.RawQuery = q.Encode()
 }
 
 func (s *service) GetPath(ctx context.Context, req *provider.GetPathRequest) (*provider.GetPathResponse, error) {

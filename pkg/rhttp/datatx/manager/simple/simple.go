@@ -20,6 +20,8 @@ package simple
 
 import (
 	"net/http"
+	"net/url"
+	"strconv"
 
 	provider "github.com/cs3org/go-cs3apis/cs3/storage/provider/v1beta1"
 	"github.com/cs3org/reva/pkg/appctx"
@@ -74,8 +76,9 @@ func (m *manager) Handler(fs storage.FS) (http.Handler, error) {
 			defer r.Body.Close()
 
 			ref := &provider.Reference{Path: fn}
+			ifNotExist := getPUTOptions(r.URL)
 
-			err := fs.Upload(ctx, ref, r.Body)
+			err := fs.Upload(ctx, ref, r.Body, ifNotExist)
 			switch v := err.(type) {
 			case nil:
 				w.WriteHeader(http.StatusOK)
@@ -101,4 +104,10 @@ func (m *manager) Handler(fs storage.FS) (http.Handler, error) {
 		}
 	})
 	return h, nil
+}
+
+func getPUTOptions(u *url.URL) (ifNotExist bool) {
+	q := u.Query()
+	ifNotExist, _ = strconv.ParseBool(q.Get("if_not_exist"))
+	return
 }
