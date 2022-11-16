@@ -95,7 +95,7 @@ func (m *manager) Handler(fs storage.FS) (http.Handler, error) {
 				ResourceId: &provider.ResourceId{StorageId: storageid, OpaqueId: opaqeid},
 				Path:       fn,
 			}
-			err = fs.Upload(ctx, ref, r.Body)
+			err = fs.Upload(ctx, ref, r.Body, false)
 			switch v := err.(type) {
 			case nil:
 				w.WriteHeader(http.StatusOK)

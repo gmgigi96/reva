@@ -46,7 +46,7 @@ import (
 
 var defaultFilePerm = os.FileMode(0664)
 
-func (fs *owncloudsqlfs) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser) error {
+func (fs *owncloudsqlfs) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser, ifNotExist bool) error {
 	upload, err := fs.GetUpload(ctx, ref.GetPath())
 	if err != nil {
 		return errors.Wrap(err, "owncloudsql: error retrieving upload")

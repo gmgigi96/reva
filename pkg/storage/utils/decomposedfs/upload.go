@@ -54,7 +54,7 @@ var defaultFilePerm = os.FileMode(0664)
 // Upload uploads data to the given resource
 // TODO Upload (and InitiateUpload) needs a way to receive the expected checksum.
 // Maybe in metadata as 'checksum' => 'sha1 aeosvp45w5xaeoe' = lowercase, space separated?
-func (fs *Decomposedfs) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser) (err error) {
+func (fs *Decomposedfs) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser, ifNotExist bool) (err error) {
 	upload, err := fs.GetUpload(ctx, ref.GetPath())
 	if err != nil {
 		return errors.Wrap(err, "Decomposedfs: error retrieving upload")

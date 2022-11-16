@@ -40,7 +40,7 @@ import (
 
 var defaultFilePerm = os.FileMode(0664)
 
-func (fs *localfs) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser) error {
+func (fs *localfs) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser, ifNotExist bool) error {
 	upload, err := fs.GetUpload(ctx, ref.GetPath())
 	if err != nil {
 		return errors.Wrap(err, "localfs: error retrieving upload")

@@ -486,7 +486,7 @@ func (fs *cback) Unlock(ctx context.Context, ref *provider.Reference, lock *prov
 	return errtypes.NotSupported("Operation Not Permitted")
 }
 
-func (fs *cback) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser) error {
+func (fs *cback) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser, ifNotExist bool) error {
 	return errtypes.NotSupported("Operation Not Permitted")
 
 }

@@ -30,7 +30,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (fs *eosfs) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser) error {
+func (fs *eosfs) Upload(ctx context.Context, ref *provider.Reference, r io.ReadCloser, ifNotExist bool) error {
 	p, err := fs.resolve(ctx, ref)
 	if err != nil {
 		return errors.Wrap(err, "eos: error resolving reference")
