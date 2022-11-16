@@ -306,7 +306,21 @@ func handleUploadError(w http.ResponseWriter, err error, log *zerolog.Logger) {
 }
 
 func randomizePath(p string) string {
-	return p + "_" + utils.RandString(6)
+	base, ext := split(p)
+	new := base + "_" + utils.RandString(6)
+	if ext != "" {
+		new += ext
+	}
+	return new
+}
+
+func split(p string) (string, string) {
+	e := path.Ext(p)
+	if e == "" {
+		return p, ""
+	}
+	i := strings.Index(p, e)
+	return p[:i], e
 }
 
 func (s *svc) upload(ctx context.Context, client gateway.GatewayAPIClient, ref *provider.Reference, opaqueMap map[string]*typespb.OpaqueEntry, content io.Reader, ifNotExists bool) error {
