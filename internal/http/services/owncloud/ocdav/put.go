@@ -20,21 +20,26 @@ package ocdav
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"path"
 	"strconv"
 	"strings"
 	"time"
 
+	gateway "github.com/cs3org/go-cs3apis/cs3/gateway/v1beta1"
 	rpc "github.com/cs3org/go-cs3apis/cs3/rpc/v1beta1"
 	provider "github.com/cs3org/go-cs3apis/cs3/storage/provider/v1beta1"
 	typespb "github.com/cs3org/go-cs3apis/cs3/types/v1beta1"
 	"github.com/cs3org/reva/internal/http/services/datagateway"
 	"github.com/cs3org/reva/pkg/appctx"
+	ctxpkg "github.com/cs3org/reva/pkg/ctx"
 	"github.com/cs3org/reva/pkg/errtypes"
 	"github.com/cs3org/reva/pkg/rhttp"
 	"github.com/cs3org/reva/pkg/storage/utils/chunking"
 	rtrace "github.com/cs3org/reva/pkg/trace"
+	"github.com/cs3org/reva/pkg/user"
 	"github.com/cs3org/reva/pkg/utils"
 	"github.com/cs3org/reva/pkg/utils/resourceid"
 	"github.com/rs/zerolog"
@@ -214,74 +219,22 @@ func (s *svc) handlePut(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	uReq := &provider.InitiateFileUploadRequest{
-		Ref:    ref,
-		Opaque: &typespb.Opaque{Map: opaqueMap},
-	}
+	ifNotExist := userInCtxHasUploaderRole(ctx)
+	originalPath := ref.Path
+	path := originalPath
 
-	// where to upload the file?
-	uRes, err := client.InitiateFileUpload(ctx, uReq)
-	if err != nil {
-		log.Error().Err(err).Msg("error initiating file upload")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	if uRes.Status.Code != rpc.Code_CODE_OK {
-		switch uRes.Status.Code {
-		case rpc.Code_CODE_PERMISSION_DENIED:
-			w.WriteHeader(http.StatusForbidden)
-			b, err := Marshal(exception{
-				code:    SabredavPermissionDenied,
-				message: "permission denied: you have no permission to upload content",
-			})
-			HandleWebdavError(&log, w, b, err)
-		case rpc.Code_CODE_NOT_FOUND:
-			w.WriteHeader(http.StatusConflict)
-		default:
-			HandleErrorStatus(&log, w, uRes.Status)
+	for {
+		if err := s.upload(ctx, client, &provider.Reference{Path: path}, opaqueMap, r.Body, ifNotExist); err != nil {
+			var e errtypes.IsAlreadyExists
+			if errors.As(err, &e) {
+				path = randomizePath(originalPath)
+				continue
+			} else {
+				handleUploadError(w, err, &log)
+				return
+			}
 		}
-		return
-	}
-
-	var ep, token string
-	for _, p := range uRes.Protocols {
-		if p.Protocol == "simple" {
-			ep, token = p.UploadEndpoint, p.Token
-		}
-	}
-
-	httpReq, err := rhttp.NewRequest(ctx, http.MethodPut, ep, r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	httpReq.Header.Set(datagateway.TokenTransportHeader, token)
-
-	httpRes, err := s.client.Do(httpReq)
-	if err != nil {
-		log.Error().Err(err).Msg("error doing PUT request to data service")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	defer httpRes.Body.Close()
-	if httpRes.StatusCode != http.StatusOK {
-		if httpRes.StatusCode == http.StatusPartialContent {
-			w.WriteHeader(http.StatusPartialContent)
-			return
-		}
-		if httpRes.StatusCode == errtypes.StatusChecksumMismatch {
-			w.WriteHeader(http.StatusBadRequest)
-			b, err := Marshal(exception{
-				code:    SabredavBadRequest,
-				message: "The computed checksum does not match the one received from the client.",
-			})
-			HandleWebdavError(&log, w, b, err)
-			return
-		}
-		log.Error().Err(err).Msg("PUT request to data server failed")
-		w.WriteHeader(httpRes.StatusCode)
-		return
+		break
 	}
 
 	ok, err := chunking.IsChunked(ref.Path)
@@ -329,6 +282,96 @@ func (s *svc) handlePut(ctx context.Context, w http.ResponseWriter, r *http.Requ
 
 	// overwrite
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func handleUploadError(w http.ResponseWriter, err error, log *zerolog.Logger) {
+	log.Error().Err(err).Msg("got error while uploading file")
+	switch err.(type) {
+	case errtypes.PermissionDenied:
+		w.WriteHeader(http.StatusForbidden)
+		b, err := Marshal(exception{
+			code:    SabredavPermissionDenied,
+			message: "permission denied: you have no permission to upload content",
+		})
+		HandleWebdavError(log, w, b, err)
+	case errtypes.NotFound:
+		w.WriteHeader(http.StatusNotFound)
+	case errtypes.PartialContent:
+		w.WriteHeader(http.StatusPartialContent)
+	case errtypes.ChecksumMismatch:
+		w.WriteHeader(errtypes.StatusChecksumMismatch)
+	default:
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
+func randomizePath(p string) string {
+	return p + "_" + utils.RandString(6)
+}
+
+func (s *svc) upload(ctx context.Context, client gateway.GatewayAPIClient, ref *provider.Reference, opaqueMap map[string]*typespb.OpaqueEntry, content io.Reader, ifNotExists bool) error {
+	uReq := &provider.InitiateFileUploadRequest{
+		Ref:    ref,
+		Opaque: &typespb.Opaque{Map: opaqueMap},
+	}
+
+	if ifNotExists {
+		uReq.Options = &provider.InitiateFileUploadRequest_IfNotExist{
+			IfNotExist: true,
+		}
+	}
+
+	// where to upload the file?
+	uRes, err := client.InitiateFileUpload(ctx, uReq)
+	if err != nil {
+		return err
+
+	}
+
+	if uRes.Status.Code != rpc.Code_CODE_OK {
+		switch uRes.Status.Code {
+		case rpc.Code_CODE_ALREADY_EXISTS:
+			return errtypes.AlreadyExists(ref.Path)
+		case rpc.Code_CODE_PERMISSION_DENIED:
+			return errtypes.PermissionDenied(uRes.Status.Message)
+		case rpc.Code_CODE_NOT_FOUND:
+			return errtypes.NotFound(uRes.Status.Message)
+		default:
+			return errtypes.InternalError(uRes.Status.Message)
+		}
+	}
+
+	var ep, token string
+	for _, p := range uRes.Protocols {
+		if p.Protocol == "simple" {
+			ep, token = p.UploadEndpoint, p.Token
+		}
+	}
+
+	httpReq, err := rhttp.NewRequest(ctx, http.MethodPut, ep, content)
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set(datagateway.TokenTransportHeader, token)
+
+	httpRes, err := s.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer httpRes.Body.Close()
+
+	if httpRes.StatusCode != http.StatusOK {
+		switch httpRes.StatusCode {
+		case http.StatusPartialContent:
+			return errtypes.PartialContent("")
+		case errtypes.StatusChecksumMismatch:
+			return errtypes.ChecksumMismatch("")
+		default:
+			return errtypes.InternalError(httpRes.Status)
+		}
+	}
+
+	return nil
 }
 
 func (s *svc) handleSpacesPut(w http.ResponseWriter, r *http.Request, spaceID string) {
@@ -380,4 +423,12 @@ func getContentLength(w http.ResponseWriter, r *http.Request) (int64, error) {
 		}
 	}
 	return length, nil
+}
+
+func userInCtxHasUploaderRole(ctx context.Context) bool {
+	u, ok := ctxpkg.ContextGetUser(ctx)
+	if !ok {
+		return false
+	}
+	return user.HasUploaderRole(u)
 }
