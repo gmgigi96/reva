@@ -366,6 +366,8 @@ func (s *svc) upload(ctx context.Context, client gateway.GatewayAPIClient, ref *
 			return errtypes.PartialContent("")
 		case errtypes.StatusChecksumMismatch:
 			return errtypes.ChecksumMismatch("")
+		case http.StatusConflict:
+			return errtypes.AlreadyExists("")
 		default:
 			return errtypes.InternalError(httpRes.Status)
 		}
