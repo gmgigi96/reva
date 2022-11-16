@@ -222,9 +222,10 @@ func (s *svc) handlePut(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	ifNotExist := userInCtxHasUploaderRole(ctx)
 	originalPath := ref.Path
 	path := originalPath
+	defer r.Body.Close()
 
 	for {
-		if err := s.upload(ctx, client, &provider.Reference{Path: path}, opaqueMap, r.Body, ifNotExist); err != nil {
+		if err := s.upload(ctx, client, &provider.Reference{Path: path}, opaqueMap, newNotClosableReader(r.Body), ifNotExist); err != nil {
 			var e errtypes.IsAlreadyExists
 			if errors.As(err, &e) {
 				path = randomizePath(originalPath)
@@ -388,6 +389,20 @@ func (s *svc) upload(ctx context.Context, client gateway.GatewayAPIClient, ref *
 	}
 
 	return nil
+}
+
+type notClosableReader struct {
+	r io.Reader
+}
+
+func newNotClosableReader(r io.ReadCloser) notClosableReader {
+	return notClosableReader{
+		r: r,
+	}
+}
+
+func (r notClosableReader) Read(p []byte) (int, error) {
+	return r.r.Read(p)
 }
 
 func (s *svc) handleSpacesPut(w http.ResponseWriter, r *http.Request, spaceID string) {
