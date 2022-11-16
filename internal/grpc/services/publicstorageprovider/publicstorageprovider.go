@@ -274,8 +274,9 @@ func (s *service) InitiateFileUpload(ctx context.Context, req *provider.Initiate
 		}, nil
 	}
 	uReq := &provider.InitiateFileUploadRequest{
-		Ref:    cs3Ref,
-		Opaque: req.Opaque,
+		Ref:     cs3Ref,
+		Opaque:  req.Opaque,
+		Options: req.Options,
 	}
 
 	uRes, err := s.gateway.InitiateFileUpload(ctx, uReq)
