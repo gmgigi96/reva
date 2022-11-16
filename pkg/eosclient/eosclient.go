@@ -50,8 +50,8 @@ type EOSClient interface {
 	Rename(ctx context.Context, auth Authorization, oldPath, newPath string) error
 	List(ctx context.Context, auth Authorization, path string) ([]*FileInfo, error)
 	Read(ctx context.Context, auth Authorization, path string) (io.ReadCloser, error)
-	Write(ctx context.Context, auth Authorization, path string, stream io.ReadCloser) error
-	WriteFile(ctx context.Context, auth Authorization, path, source string) error
+	Write(ctx context.Context, auth Authorization, path string, stream io.ReadCloser, override bool) error
+	WriteFile(ctx context.Context, auth Authorization, path, source string, override bool) error
 	ListDeletedEntries(ctx context.Context, auth Authorization) ([]*DeletedEntry, error)
 	RestoreDeletedEntry(ctx context.Context, auth Authorization, key string) error
 	PurgeDeletedEntries(ctx context.Context, auth Authorization) error

@@ -190,6 +190,11 @@ func (c *Client) executeXRDCopy(ctx context.Context, cmdArgs []string) (string, 
 				err = nil
 			case int(syscall.ENOENT):
 				err = errtypes.NotFound(errBuf.String())
+			case 54:
+				// check for file already exists error
+				if strings.Contains(errBuf.String(), "File exists") {
+					err = errtypes.AlreadyExists("eosclient: file already exists")
+				}
 			}
 		}
 	}
@@ -744,7 +749,7 @@ func (c *Client) Read(ctx context.Context, auth eosclient.Authorization, path st
 }
 
 // Write writes a stream to the mgm
-func (c *Client) Write(ctx context.Context, auth eosclient.Authorization, path string, stream io.ReadCloser) error {
+func (c *Client) Write(ctx context.Context, auth eosclient.Authorization, path string, stream io.ReadCloser, override bool) error {
 	fd, err := ioutil.TempFile(c.opt.CacheDirectory, "eoswrite-")
 	if err != nil {
 		return err
@@ -758,13 +763,17 @@ func (c *Client) Write(ctx context.Context, auth eosclient.Authorization, path s
 		return err
 	}
 
-	return c.WriteFile(ctx, auth, path, fd.Name())
+	return c.WriteFile(ctx, auth, path, fd.Name(), override)
 }
 
 // WriteFile writes an existing file to the mgm
-func (c *Client) WriteFile(ctx context.Context, auth eosclient.Authorization, path, source string) error {
+func (c *Client) WriteFile(ctx context.Context, auth eosclient.Authorization, path, source string, override bool) error {
 	xrdPath := fmt.Sprintf("%s//%s", c.opt.URL, path)
-	args := []string{"--nopbar", "--silent", "-f", source, xrdPath}
+	args := []string{"--nopbar", "--silent"}
+	if override {
+		args = append(args, "-f")
+	}
+	args = append(args, source, xrdPath)
 
 	if auth.Token != "" {
 		args[4] += "?authz=" + auth.Token
