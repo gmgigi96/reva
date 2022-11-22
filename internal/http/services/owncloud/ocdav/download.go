@@ -151,11 +151,11 @@ func (s *svc) getResourceFromPublicLinkToken(ctx context.Context, token, file st
 		return nil, err
 	}
 
-	if res.Status.Code != rpc.Code_CODE_OK {
-		if res.Status.Code == rpc.Code_CODE_NOT_FOUND {
+	if statRes.Status.Code != rpc.Code_CODE_OK {
+		if statRes.Status.Code == rpc.Code_CODE_NOT_FOUND {
 			return nil, errtypes.NotFound(token)
 		}
-		return nil, errtypes.InternalError(res.Status.Message)
+		return nil, errtypes.InternalError(statRes.Status.Message)
 	}
 	return statRes.Info, nil
 }
