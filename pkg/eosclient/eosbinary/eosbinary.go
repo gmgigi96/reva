@@ -841,7 +841,11 @@ func (c *Client) getVersionFolderInode(ctx context.Context, auth eosclient.Autho
 	versionFolder := getVersionFolder(p)
 	md, err := c.getRawFileInfoByPath(ctx, auth, versionFolder)
 	if err != nil {
-		if err = c.CreateDir(ctx, auth, versionFolder); err != nil {
+		ownerAuth := eosclient.Authorization{Role: eosclient.Role{
+			UID: strconv.FormatUint(md.UID, 10),
+			GID: strconv.FormatUint(md.GID, 10),
+		}}
+		if err = c.CreateDir(ctx, ownerAuth, versionFolder); err != nil {
 			return 0, err
 		}
 		md, err = c.getRawFileInfoByPath(ctx, auth, versionFolder)
