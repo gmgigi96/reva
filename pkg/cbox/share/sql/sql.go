@@ -146,6 +146,12 @@ func (m *mgr) Share(ctx context.Context, md *provider.ResourceInfo, g *collabora
 	stmtString := "insert into oc_share set share_type=?,uid_owner=?,uid_initiator=?,item_type=?,fileid_prefix=?,item_source=?,file_source=?,permissions=?,stime=?,share_with=?,file_target=?"
 	stmtValues := []interface{}{shareType, conversions.FormatUserID(md.Owner), conversions.FormatUserID(user.Id), itemType, prefix, itemSource, fileSource, permissions, now, shareWith, targetPath}
 
+	if g.Expiration != nil && g.Expiration.Seconds != 0 {
+		t := time.Unix(int64(g.Expiration.Seconds), 0)
+		stmtString += ",expiration=?"
+		stmtValues = append(stmtValues, t)
+	}
+
 	stmt, err := m.db.Prepare(stmtString)
 	if err != nil {
 		return nil, err
