@@ -178,6 +178,7 @@ func (m *manager) fetchAllGroupAccounts(ctx context.Context) error {
 				continue
 			}
 			if _, err := m.parseAndCacheGroup(ctx, g); err != nil {
+				log.Error().Err(err).Interface("group", g).Msg("rest: error caching group")
 				continue
 			}
 		}

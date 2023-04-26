@@ -202,6 +202,7 @@ func (m *manager) fetchAllUserAccounts(ctx context.Context) error {
 
 		for _, usr := range r.Data {
 			if _, err := m.parseAndCacheUser(ctx, usr); err != nil {
+				log.Error().Err(err).Interface("user", usr).Msg("rest: error caching user")
 				continue
 			}
 		}
