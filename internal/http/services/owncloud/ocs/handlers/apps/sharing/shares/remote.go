@@ -108,7 +108,14 @@ func (h *Handler) createFederatedCloudShare(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	response.WriteOCSSuccess(w, r, "OCM Share created")
+	s, err := conversions.CS3OCMShare2ShareData(ctx, resource.Path, createShareResponse.Share)
+	if err != nil {
+		response.WriteOCSError(w, r, response.MetaServerError.StatusCode, "error mapping share data", err)
+		return
+	}
+	h.mapUserIdsReceivedFederatedShare(ctx, c, s)
+
+	response.WriteOCSSuccess(w, r, s)
 }
 
 func getViewModeFromRole(role *conversions.Role) providerv1beta1.ViewMode {

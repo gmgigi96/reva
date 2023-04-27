@@ -209,6 +209,33 @@ func CS3Share2ShareData(ctx context.Context, share *collaboration.Share) (*Share
 	return sd, nil
 }
 
+// CS3Share2ShareData converts a cs3api user share into shareData data model.
+func CS3OCMShare2ShareData(ctx context.Context, path string, share *ocm.Share) (*ShareData, error) {
+	webdav, ok := webdavAccessMethod(share.AccessMethods)
+	if !ok {
+		return nil, errtypes.InternalError("webdav endpoint not in share")
+	}
+
+	s := &ShareData{
+		ID:           share.Id.OpaqueId,
+		UIDOwner:     formatRemoteUser(share.Creator),
+		UIDFileOwner: formatRemoteUser(share.Owner),
+		ShareWith:    share.Grantee.GetUserId().OpaqueId,
+		Permissions:  RoleFromResourcePermissions(webdav.Permissions).OCSPermissions(),
+		ShareType:    ShareTypeFederatedCloudShare,
+		Path:         path,
+		FileTarget:   path,
+		ItemSource:   path,
+		STime:        share.Ctime.Seconds,
+		Name:         share.Name,
+	}
+
+	if share.Expiration != nil {
+		s.Expiration = timestampToExpiration(share.Expiration)
+	}
+	return s, nil
+}
+
 // PublicShare2ShareData converts a cs3api public share into shareData data model.
 func PublicShare2ShareData(share *link.PublicShare, r *http.Request, publicURL string) *ShareData {
 	sd := &ShareData{
@@ -248,6 +275,15 @@ func PublicShare2ShareData(share *link.PublicShare, r *http.Request, publicURL s
 
 func formatRemoteUser(u *userpb.UserId) string {
 	return fmt.Sprintf("%s@%s", u.OpaqueId, u.Idp)
+}
+
+func webdavAccessMethod(am []*ocm.AccessMethod) (*ocm.WebDAVAccessMethod, bool) {
+	for _, a := range am {
+		if opt, ok := a.Term.(*ocm.AccessMethod_WebdavOptions); ok {
+			return opt.WebdavOptions, true
+		}
+	}
+	return nil, false
 }
 
 func webdavInfo(protocols []*ocm.Protocol) (*ocm.WebDAVProtocol, bool) {
