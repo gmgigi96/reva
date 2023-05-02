@@ -32,6 +32,7 @@ import (
 	authpb "github.com/cs3org/go-cs3apis/cs3/auth/provider/v1beta1"
 	user "github.com/cs3org/go-cs3apis/cs3/identity/user/v1beta1"
 	rpc "github.com/cs3org/go-cs3apis/cs3/rpc/v1beta1"
+	"github.com/cs3org/reva/pkg/appctx"
 	"github.com/cs3org/reva/pkg/auth"
 	"github.com/cs3org/reva/pkg/auth/manager/registry"
 	"github.com/cs3org/reva/pkg/auth/scope"
@@ -224,6 +225,7 @@ func (am *mgr) doUserMapping(tkn *oidc.IDToken, claims jwt.MapClaims) (string, e
 // which contains the access token that we can use to contact the UserInfo endpoint
 // and get the user claims.
 func (am *mgr) Authenticate(ctx context.Context, _, clientSecret string) (*user.User, map[string]*authpb.Scope, error) {
+	log := appctx.GetLogger(ctx)
 	ctx = am.getOAuthCtx(ctx)
 
 	claims, err := extractClaims(clientSecret)
@@ -235,10 +237,13 @@ func (am *mgr) Authenticate(ctx context.Context, _, clientSecret string) (*user.
 	if !ok {
 		return nil, nil, errtypes.PermissionDenied("issuer not contained in the token")
 	}
+	log.Debug().Str("issuer", issuer).Msg("extracted issuer from token")
 
 	if !am.isIssuerAllowed(issuer) {
+		log.Debug().Str("issuer", issuer).Msg("issuer is not in the whitelist")
 		return nil, nil, errtypes.PermissionDenied("issuer not recognised")
 	}
+	log.Debug().Str("issuer", issuer).Msg("issuer is whitelisted")
 
 	provider, err := am.getOIDCProviderForIssuer(ctx, issuer)
 	if err != nil {
@@ -251,13 +256,14 @@ func (am *mgr) Authenticate(ctx context.Context, _, clientSecret string) (*user.
 
 	tkn, err := provider.Verifier(config).Verify(ctx, clientSecret)
 	if err != nil {
-		return nil, nil, errtypes.PermissionDenied("oidc token to valid")
+		return nil, nil, errtypes.PermissionDenied(fmt.Sprintf("oidc token not valid: %+v", err))
 	}
 
 	sub, err := am.doUserMapping(tkn, claims)
 	if err != nil {
 		return nil, nil, err
 	}
+	log.Debug().Str("sub", sub).Msg("mapped user from token")
 
 	client, err := pool.GetGatewayServiceClient(pool.Endpoint(am.c.GatewaySvc))
 	if err != nil {
