@@ -34,15 +34,13 @@ func init() {
 }
 
 type config struct {
-	Prefix                     string     `mapstructure:"prefix"`
-	GatewaySvc                 string     `mapstructure:"gatewaysvc"`
-	Config                     configData `mapstructure:"config"`
-	ExposeRecipientDisplayName bool       `mapstructure:"expose_recipient_display_name"`
+	Prefix                     string `mapstructure:"prefix"`
+	GatewaySvc                 string `mapstructure:"gatewaysvc"`
+	ExposeRecipientDisplayName bool   `mapstructure:"expose_recipient_display_name"`
 }
 
 func (c *config) init() {
 	c.GatewaySvc = sharedconf.GetGatewaySVC(c.GatewaySvc)
-
 	if c.Prefix == "" {
 		c.Prefix = "ocm"
 	}
@@ -76,12 +74,10 @@ func New(m map[string]interface{}, log *zerolog.Logger) (global.Service, error) 
 }
 
 func (s *svc) routerInit() error {
-	configHandler := new(configHandler)
 	sharesHandler := new(sharesHandler)
 	notificationsHandler := new(notificationsHandler)
 	invitesHandler := new(invitesHandler)
 
-	configHandler.init(s.Conf)
 	if err := sharesHandler.init(s.Conf); err != nil {
 		return err
 	}
@@ -90,11 +86,9 @@ func (s *svc) routerInit() error {
 		return err
 	}
 
-	s.router.Get("/ocm-provider", configHandler.Send) // FIXME: where this endpoint is documented?
 	s.router.Post("/shares", sharesHandler.CreateShare)
 	s.router.Post("/notifications", notificationsHandler.SendNotification)
 	s.router.Post("/invite-accepted", invitesHandler.AcceptInvite)
-
 	return nil
 }
 
@@ -114,7 +108,7 @@ func (s *svc) Unprotected() []string {
 func (s *svc) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log := appctx.GetLogger(r.Context())
-		log.Debug().Str("path", r.URL.Path).Msg("ocs routing")
+		log.Debug().Str("path", r.URL.Path).Msg("ocm routing")
 
 		// unset raw path, otherwise chi uses it to route and then fails to match percent encoded path segments
 		r.URL.RawPath = ""
