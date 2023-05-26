@@ -180,7 +180,7 @@ func (h *DavHandler) Handler(s *svc) http.Handler {
 			h.SpacesHandler.Handler(s).ServeHTTP(w, r)
 		case "ocm":
 			base := path.Join(ctx.Value(ctxKeyBaseURI).(string), "ocm")
-			ctx := context.WithValue(ctx, ctxKeyBaseURI, base)
+			ctx = context.WithValue(ctx, ctxKeyBaseURI, base)
 
 			c, err := pool.GetGatewayServiceClient(pool.Endpoint(s.c.GatewaySvc))
 			if err != nil {
