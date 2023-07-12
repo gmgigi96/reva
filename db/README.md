@@ -47,3 +47,10 @@ The following table was populated by hand and it is not used by Reva:
 
 * oc_sciencemesh
 
+The scripts in this folder include:
+* An `init.sql` script to create a database schema from scratch that works with latest Reva.
+
+Furthermore, for historical record:
+* An `owncloud_db_dump.sql` script to represent the current state of the DB as of July 2023.
+* Some `setup_*.sql` scripts to add schema features as they are developed and published.
+* Some `drop_*.sql` scripts to clean up a production schema that was used with former legacy systems.
