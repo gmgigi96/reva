@@ -30,7 +30,6 @@ import (
 	"github.com/cs3org/reva/pkg/appctx"
 	"github.com/cs3org/reva/pkg/errtypes"
 	"github.com/cs3org/reva/pkg/rhttp"
-	"github.com/cs3org/reva/pkg/rhttp/middlewares"
 	"github.com/cs3org/reva/pkg/rhttp/mux"
 	"github.com/cs3org/reva/pkg/sharedconf"
 	"github.com/cs3org/reva/pkg/utils/cfg"
@@ -102,27 +101,42 @@ func (s *svc) Close() error {
 	return nil
 }
 
+func (s *svc) Unprotected() []string {
+	return []string{"/" + s.conf.Prefix}
+}
+
+func (s *svc) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodHead:
+			addCorsHeader(w)
+			s.doHead(w, r)
+			return
+		case http.MethodGet:
+			s.doGet(w, r)
+			return
+		case http.MethodPut:
+			s.doPut(w, r)
+			return
+		case http.MethodPatch:
+			s.doPatch(w, r)
+			return
+		default:
+			w.WriteHeader(http.StatusNotImplemented)
+			return
+		}
+	})
+}
+
 func (s *svc) Register(r mux.Router) {
 	// TODO (gdelmont): the token verification can be a custom middleware
 	// as the add cors header for HEAD
 	r.Route("/"+s.conf.Prefix, func(r mux.Router) {
-		r.Get("", http.HandlerFunc(s.doGet))
-		r.Head("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			addCorsHeader(w)
-			s.doHead(w, r)
-		}))
-		r.Put("", http.HandlerFunc(s.doPut))
-		r.Patch("", http.HandlerFunc(s.doPatch))
-	}, mux.Unprotected(), mux.WithMiddleware(middlewares.TrimPrefix("/"+s.conf.Prefix)))
+		r.Handle("", s.handler())
+	})
 	r.Route("/"+s.conf.Prefix, func(r mux.Router) {
-		r.Get("/*", http.HandlerFunc(s.doGet))
-		r.Head("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			addCorsHeader(w)
-			s.doHead(w, r)
-		}))
-		r.Put("/*", http.HandlerFunc(s.doPut))
-		r.Patch("/*", http.HandlerFunc(s.doPatch))
-	}, mux.Unprotected(), mux.WithMiddleware(middlewares.TrimPrefix("/"+s.conf.Prefix)))
+		r.Handle("/*", s.handler())
+	})
 }
 
 func addCorsHeader(res http.ResponseWriter) {
