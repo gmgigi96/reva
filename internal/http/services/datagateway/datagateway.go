@@ -65,7 +65,7 @@ type config struct {
 
 func (c *config) ApplyDefaults() {
 	if c.Prefix == "" {
-		c.Prefix = "datagateway"
+		c.Prefix = "data"
 	}
 	c.TransferSharedSecret = sharedconf.GetJWTSecret(c.TransferSharedSecret)
 }
