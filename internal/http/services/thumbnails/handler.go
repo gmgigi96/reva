@@ -133,7 +133,7 @@ func (s *svc) davUserContext(next http.Handler) http.Handler {
 		ctx := r.Context()
 
 		path := r.URL.Path
-		path, _ = url.QueryUnescape(path)
+		path, _ = url.PathUnescape(path)
 
 		res, err := s.statRes(ctx, &provider.Reference{
 			Path: path,
