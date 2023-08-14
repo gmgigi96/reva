@@ -36,6 +36,7 @@ import (
 	provider "github.com/cs3org/go-cs3apis/cs3/storage/provider/v1beta1"
 	typesv1beta1 "github.com/cs3org/go-cs3apis/cs3/types/v1beta1"
 	"github.com/cs3org/reva/internal/http/services/thumbnails/manager"
+	"github.com/cs3org/reva/pkg/appctx"
 	ctxpkg "github.com/cs3org/reva/pkg/ctx"
 	"github.com/cs3org/reva/pkg/errtypes"
 	"github.com/cs3org/reva/pkg/rgrpc/todo/pool"
@@ -44,7 +45,7 @@ import (
 	"github.com/cs3org/reva/pkg/rhttp/router"
 	"github.com/cs3org/reva/pkg/sharedconf"
 	"github.com/cs3org/reva/pkg/storage/utils/downloader"
-	"github.com/mitchellh/mapstructure"
+	"github.com/cs3org/reva/pkg/utils/cfg"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/metadata"
@@ -79,7 +80,7 @@ type svc struct {
 	thumbnail *manager.Thumbnail
 }
 
-func (c *config) init() {
+func (c *config) ApplyDefaults() {
 	if c.Prefix == "" {
 		c.Prefix = "thumbnails"
 	}
@@ -93,13 +94,11 @@ func (c *config) init() {
 }
 
 // New creates a new thumbnails HTTP service
-func New(conf map[string]interface{}, log *zerolog.Logger) (global.Service, error) {
-	c := &config{}
-	err := mapstructure.Decode(conf, c)
-	if err != nil {
-		return nil, errors.Wrap(err, "error decoding config")
+func New(ctx context.Context, m map[string]interface{}) (global.Service, error) {
+	var c config
+	if err := cfg.Decode(m, &c); err != nil {
+		return nil, err
 	}
-	c.init()
 
 	gtw, err := pool.GetGatewayServiceClient(pool.Endpoint(c.GatewaySVC))
 	if err != nil {
@@ -108,6 +107,7 @@ func New(conf map[string]interface{}, log *zerolog.Logger) (global.Service, erro
 
 	d := downloader.NewDownloader(gtw, rhttp.Insecure(c.Insecure))
 
+	log := appctx.GetLogger(ctx)
 	mgr, err := manager.NewThumbnail(d, &manager.Config{
 		Quality:          c.Quality,
 		FixedResolutions: c.FixedResolutions,
@@ -119,7 +119,7 @@ func New(conf map[string]interface{}, log *zerolog.Logger) (global.Service, erro
 	}
 
 	s := &svc{
-		c:         c,
+		c:         &c,
 		log:       log,
 		thumbnail: mgr,
 		client:    gtw,

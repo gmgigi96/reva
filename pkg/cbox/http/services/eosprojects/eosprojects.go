@@ -11,14 +11,15 @@ import (
 	group "github.com/cs3org/go-cs3apis/cs3/identity/group/v1beta1"
 	userpb "github.com/cs3org/go-cs3apis/cs3/identity/user/v1beta1"
 	rpc "github.com/cs3org/go-cs3apis/cs3/rpc/v1beta1"
+	"github.com/cs3org/reva/pkg/appctx"
 	ctxpkg "github.com/cs3org/reva/pkg/ctx"
 	"github.com/cs3org/reva/pkg/errtypes"
 	"github.com/cs3org/reva/pkg/rgrpc/todo/pool"
 	"github.com/cs3org/reva/pkg/rhttp/global"
 	"github.com/cs3org/reva/pkg/sharedconf"
+	"github.com/cs3org/reva/pkg/utils/cfg"
 	"github.com/go-chi/chi/v5"
 	"github.com/juliangruber/go-intersect"
-	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 )
@@ -54,16 +55,7 @@ type project struct {
 
 var projectRegex = regexp.MustCompile(`^cernbox-project-(?P<Name>.+)-(?P<Permissions>admins|writers|readers)\z`)
 
-func parseConfig(c map[string]interface{}) (*config, error) {
-	conf := &config{}
-	err := mapstructure.Decode(c, conf)
-	if err != nil {
-		return nil, errors.Wrap(err, "error deconding config")
-	}
-	return conf, nil
-}
-
-func (c *config) init() {
+func (c *config) ApplyDefaults() {
 	if c.Prefix == "" {
 		c.Prefix = "projects"
 	}
@@ -73,14 +65,11 @@ func (c *config) init() {
 	c.SkipUserGroupsInToken = c.SkipUserGroupsInToken || sharedconf.SkipUserGroupsInToken()
 }
 
-func New(conf map[string]interface{}, log *zerolog.Logger) (global.Service, error) {
-
-	c, err := parseConfig(conf)
-	if err != nil {
+func New(ctx context.Context, m map[string]interface{}) (global.Service, error) {
+	var c config
+	if err := cfg.Decode(m, &c); err != nil {
 		return nil, err
 	}
-
-	c.init()
 
 	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", c.Username, c.Password, c.Host, c.Port, c.Name))
 	if err != nil {
@@ -89,9 +78,10 @@ func New(conf map[string]interface{}, log *zerolog.Logger) (global.Service, erro
 
 	r := chi.NewRouter()
 
+	log := appctx.GetLogger(ctx)
 	e := &eosProj{
 		log:    log,
-		c:      c,
+		c:      &c,
 		db:     db,
 		router: r,
 	}

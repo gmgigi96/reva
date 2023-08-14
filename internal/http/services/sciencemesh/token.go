@@ -24,7 +24,6 @@ import (
 	"html/template"
 	"mime"
 	"net/http"
-	"strings"
 
 	gateway "github.com/cs3org/go-cs3apis/cs3/gateway/v1beta1"
 	userpb "github.com/cs3org/go-cs3apis/cs3/identity/user/v1beta1"
@@ -36,18 +35,16 @@ import (
 	ctxpkg "github.com/cs3org/reva/pkg/ctx"
 	"github.com/cs3org/reva/pkg/rgrpc/todo/pool"
 	"github.com/cs3org/reva/pkg/smtpclient"
+	"github.com/cs3org/reva/pkg/utils/list"
 )
-
-const defaultInviteLink = "{{.MeshDirectoryURL}}?token={{.Token}}&providerDomain={{.User.Id.Idp}}"
 
 type tokenHandler struct {
 	gatewayClient    gateway.GatewayAPIClient
 	smtpCredentials  *smtpclient.SMTPCredentials
 	meshDirectoryURL string
-
-	tplSubj       *template.Template
-	tplBody       *template.Template
-	tplInviteLink *template.Template
+	providerDomain   string
+	tplSubj          *template.Template
+	tplBody          *template.Template
 }
 
 func (h *tokenHandler) init(c *config) error {
@@ -62,6 +59,7 @@ func (h *tokenHandler) init(c *config) error {
 	}
 
 	h.meshDirectoryURL = c.MeshDirectoryURL
+	h.providerDomain = c.ProviderDomain
 
 	if err := h.initSubjectTemplate(c.SubjectTemplate); err != nil {
 		return err
@@ -71,7 +69,7 @@ func (h *tokenHandler) init(c *config) error {
 		return err
 	}
 
-	return h.initInviteLinkTemplate(c.InviteLinkTemplate)
+	return nil
 }
 
 type token struct {
@@ -79,12 +77,6 @@ type token struct {
 	Description string `json:"description,omitempty"`
 	Expiration  uint64 `json:"expiration,omitempty"`
 	InviteLink  string `json:"invite_link"`
-}
-
-type inviteLinkParams struct {
-	User             *userpb.User
-	Token            string
-	MeshDirectoryURL string
 }
 
 // Generate generates an invitation token and if a recipient is specified,
@@ -116,12 +108,7 @@ func (h *tokenHandler) Generate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tknRes, err := h.prepareGenerateTokenResponse(user, token.InviteToken)
-	if err != nil {
-		reqres.WriteError(w, r, reqres.APIErrorServerError, "error generating response", err)
-		return
-	}
-
+	tknRes := h.prepareGenerateTokenResponse(token.InviteToken)
 	if err := json.NewEncoder(w).Encode(tknRes); err != nil {
 		reqres.WriteError(w, r, reqres.APIErrorServerError, "error marshalling token data", err)
 		return
@@ -131,34 +118,17 @@ func (h *tokenHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *tokenHandler) generateInviteLink(user *userpb.User, token *invitepb.InviteToken) (string, error) {
-	var inviteLink strings.Builder
-	if err := h.tplInviteLink.Execute(&inviteLink, inviteLinkParams{
-		User:             user,
-		Token:            token.Token,
-		MeshDirectoryURL: h.meshDirectoryURL,
-	}); err != nil {
-		return "", err
-	}
-
-	return inviteLink.String(), nil
-}
-
-func (h *tokenHandler) prepareGenerateTokenResponse(user *userpb.User, tkn *invitepb.InviteToken) (*token, error) {
-	inviteLink, err := h.generateInviteLink(user, tkn)
-	if err != nil {
-		return nil, err
-	}
+func (h *tokenHandler) prepareGenerateTokenResponse(tkn *invitepb.InviteToken) *token {
 	res := &token{
 		Token:       tkn.Token,
 		Description: tkn.Description,
-		InviteLink:  inviteLink,
+		InviteLink:  h.meshDirectoryURL + "?token=" + tkn.Token + "&providerDomain=" + h.providerDomain,
 	}
 	if tkn.Expiration != nil {
 		res.Expiration = tkn.Expiration.Seconds
 	}
 
-	return res, nil
+	return res
 }
 
 type acceptInviteRequest struct {
@@ -243,6 +213,13 @@ func getAcceptInviteRequest(r *http.Request) (*acceptInviteRequest, error) {
 	return &req, nil
 }
 
+type remoteUser struct {
+	DisplayName string `json:"display_name"`
+	Idp         string `json:"idp"`
+	UserID      string `json:"user_id"`
+	Mail        string `json:"mail"`
+}
+
 // FindAccepted returns the list of all the users that accepted the invitation
 // to the authenticated user.
 func (h *tokenHandler) FindAccepted(w http.ResponseWriter, r *http.Request) {
@@ -254,13 +231,68 @@ func (h *tokenHandler) FindAccepted(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(res.AcceptedUsers); err != nil {
+	users := list.Map(res.AcceptedUsers, func(u *userpb.User) *remoteUser {
+		return &remoteUser{
+			DisplayName: u.DisplayName,
+			Idp:         u.Id.Idp,
+			UserID:      u.Id.OpaqueId,
+			Mail:        u.Mail,
+		}
+	})
+
+	if err := json.NewEncoder(w).Encode(users); err != nil {
 		reqres.WriteError(w, r, reqres.APIErrorServerError, "error marshalling token data", err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+}
+
+// DeleteAccepted deletes the given user from the list of the accepted users.
+func (h *tokenHandler) DeleteAccepted(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	req, err := getDeleteAcceptedRequest(r)
+	if err != nil {
+		reqres.WriteError(w, r, reqres.APIErrorInvalidParameter, "missing parameters in request", err)
+		return
+	}
+
+	res, err := h.gatewayClient.DeleteAcceptedUser(ctx, &invitepb.DeleteAcceptedUserRequest{
+		RemoteUserId: &userpb.UserId{
+			Idp:      req.Idp,
+			OpaqueId: req.UserID,
+			Type:     userpb.UserType_USER_TYPE_FEDERATED,
+		},
+	})
+	if err != nil {
+		reqres.WriteError(w, r, reqres.APIErrorServerError, "error sending a grpc get invite by domain info request", err)
+		return
+	}
+	if res.Status.Code != rpc.Code_CODE_OK {
+		reqres.WriteError(w, r, reqres.APIErrorServerError, "grpc forward invite request failed", errors.New(res.Status.Message))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+type deleteAcceptedRequest struct {
+	Idp    string `json:"idp"`
+	UserID string `json:"user_id"`
+}
+
+func getDeleteAcceptedRequest(r *http.Request) (*deleteAcceptedRequest, error) {
+	var req deleteAcceptedRequest
+	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err == nil && contentType == "application/json" {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return nil, err
+		}
+	} else {
+		req.Idp, req.UserID = r.FormValue("idp"), r.FormValue("user_id")
+	}
+	return &req, nil
 }
 
 func (h *tokenHandler) ListInvite(w http.ResponseWriter, r *http.Request) {
@@ -278,22 +310,8 @@ func (h *tokenHandler) ListInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokens := make([]*token, 0, len(res.InviteTokens))
-	user := ctxpkg.ContextMustGetUser(ctx)
 	for _, tkn := range res.InviteTokens {
-		inviteURL, err := h.generateInviteLink(user, tkn)
-		if err != nil {
-			reqres.WriteError(w, r, reqres.APIErrorServerError, "error generating invite URL from OCM token", err)
-			return
-		}
-		t := &token{
-			Token:       tkn.Token,
-			Description: tkn.Description,
-			InviteLink:  inviteURL,
-		}
-		if tkn.Expiration != nil {
-			t.Expiration = tkn.Expiration.Seconds
-		}
-		tokens = append(tokens, t)
+		tokens = append(tokens, h.prepareGenerateTokenResponse(tkn))
 	}
 
 	if err := json.NewEncoder(w).Encode(tokens); err != nil {

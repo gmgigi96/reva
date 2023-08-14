@@ -39,10 +39,10 @@ import (
 	"github.com/cs3org/reva/pkg/share/manager/registry"
 	"github.com/cs3org/reva/pkg/sharedconf"
 	"github.com/cs3org/reva/pkg/utils"
+	"github.com/cs3org/reva/pkg/utils/cfg"
 
 	// Provides mysql drivers.
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	"google.golang.org/genproto/protobuf/field_mask"
 )
@@ -75,11 +75,14 @@ type mgr struct {
 	db *sql.DB
 }
 
+func (c *config) ApplyDefaults() {
+	c.GatewaySvc = sharedconf.GetGatewaySVC(c.GatewaySvc)
+}
+
 // New returns a new share manager.
-func New(m map[string]interface{}) (share.Manager, error) {
-	c, err := parseConfig(m)
-	if err != nil {
-		err = errors.Wrap(err, "error creating a new manager")
+func New(ctx context.Context, m map[string]interface{}) (share.Manager, error) {
+	var c config
+	if err := cfg.Decode(m, &c); err != nil {
 		return nil, err
 	}
 
@@ -89,18 +92,9 @@ func New(m map[string]interface{}) (share.Manager, error) {
 	}
 
 	return &mgr{
-		c:  c,
+		c:  &c,
 		db: db,
 	}, nil
-}
-
-func parseConfig(m map[string]interface{}) (*config, error) {
-	c := &config{}
-	if err := mapstructure.Decode(m, c); err != nil {
-		return nil, err
-	}
-	c.GatewaySvc = sharedconf.GetGatewaySVC(c.GatewaySvc)
-	return c, nil
 }
 
 func (m *mgr) Share(ctx context.Context, md *provider.ResourceInfo, g *collaboration.ShareGrant) (*collaboration.Share, error) {

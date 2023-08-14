@@ -37,7 +37,7 @@ import (
 	"github.com/cs3org/reva/pkg/ocm/share"
 	"github.com/cs3org/reva/pkg/ocm/share/repository/registry"
 	"github.com/cs3org/reva/pkg/utils"
-	"github.com/mitchellh/mapstructure"
+	"github.com/cs3org/reva/pkg/utils/cfg"
 	"github.com/pkg/errors"
 	"google.golang.org/genproto/protobuf/field_mask"
 )
@@ -94,27 +94,14 @@ type ReceivedShareAltMap struct {
 	State ocm.ShareState `json:"state"`
 }
 
-func (c *ShareManagerConfig) init() {
-}
-
-func parseConfig(m map[string]interface{}) (*ShareManagerConfig, error) {
-	c := &ShareManagerConfig{}
-	if err := mapstructure.Decode(m, c); err != nil {
-		err = errors.Wrap(err, "error decoding conf")
-		return nil, err
-	}
-	return c, nil
-}
-
 // New returns a share manager implementation that verifies against a Nextcloud backend.
-func New(m map[string]interface{}) (share.Repository, error) {
-	c, err := parseConfig(m)
-	if err != nil {
+func New(ctx context.Context, m map[string]interface{}) (share.Repository, error) {
+	var c ShareManagerConfig
+	if err := cfg.Decode(m, &c); err != nil {
 		return nil, err
 	}
-	c.init()
 
-	return NewShareManager(c)
+	return NewShareManager(&c)
 }
 
 // NewShareManager returns a new Nextcloud-based ShareManager.
@@ -202,14 +189,13 @@ func (sm *Manager) DeleteShare(ctx context.Context, user *userpb.User, ref *ocm.
 }
 
 // UpdateShare updates the mode of the given share.
-func (sm *Manager) UpdateShare(ctx context.Context, user *userpb.User, ref *ocm.ShareReference, p *ocm.SharePermissions) (*ocm.Share, error) {
+func (sm *Manager) UpdateShare(ctx context.Context, user *userpb.User, ref *ocm.ShareReference, f ...*ocm.UpdateOCMShareRequest_UpdateField) (*ocm.Share, error) {
 	type paramsObj struct {
 		Ref *ocm.ShareReference   `json:"ref"`
 		P   *ocm.SharePermissions `json:"p"`
 	}
 	bodyObj := &paramsObj{
 		Ref: ref,
-		P:   p,
 	}
 	data, err := json.Marshal(bodyObj)
 	if err != nil {
@@ -407,10 +393,10 @@ func (sm *Manager) UpdateReceivedShare(ctx context.Context, user *userpb.User, s
 }
 
 func getUsername(user *userpb.User) string {
-	if len(user.Username) > 0 {
+	if user != nil && len(user.Username) > 0 {
 		return user.Username
 	}
-	if len(user.Id.OpaqueId) > 0 {
+	if user != nil && len(user.Id.OpaqueId) > 0 {
 		return user.Id.OpaqueId
 	}
 

@@ -52,8 +52,9 @@ import (
 	"github.com/cs3org/reva/pkg/rhttp"
 	"github.com/cs3org/reva/pkg/sharedconf"
 	"github.com/cs3org/reva/pkg/utils"
+	"github.com/cs3org/reva/pkg/utils/cfg"
+	gomime "github.com/glpatcern/go-mime"
 	"github.com/golang-jwt/jwt"
-	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 )
 
@@ -90,12 +91,14 @@ type config struct {
 	InsecureConnections bool   `mapstructure:"insecure_connections"`
 }
 
-func parseConfig(m map[string]interface{}) (*config, error) {
-	c := &config{}
-	if err := mapstructure.Decode(m, c); err != nil {
-		return nil, err
+func (c *config) ApplyDefaults() {
+	if c.AppIntURL == "" {
+		c.AppIntURL = c.AppURL
 	}
-	return c, nil
+	if c.IOPSecret == "" {
+		c.IOPSecret = os.Getenv("REVA_APPPROVIDER_IOPSECRET")
+	}
+	c.JWTSecret = sharedconf.GetJWTSecret(c.JWTSecret)
 }
 
 type wopiProvider struct {
@@ -106,21 +109,13 @@ type wopiProvider struct {
 
 // New returns an implementation of the app.Provider interface that
 // connects to an application in the backend.
-func New(m map[string]interface{}) (app.Provider, error) {
-	c, err := parseConfig(m)
-	if err != nil {
+func New(ctx context.Context, m map[string]interface{}) (app.Provider, error) {
+	var c config
+	if err := cfg.Decode(m, &c); err != nil {
 		return nil, err
 	}
 
-	if c.AppIntURL == "" {
-		c.AppIntURL = c.AppURL
-	}
-	if c.IOPSecret == "" {
-		c.IOPSecret = os.Getenv("REVA_APPPROVIDER_IOPSECRET")
-	}
-	c.JWTSecret = sharedconf.GetJWTSecret(c.JWTSecret)
-
-	appURLs, err := getAppURLs(c)
+	appURLs, err := getAppURLs(&c)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +135,7 @@ func New(m map[string]interface{}) (app.Provider, error) {
 	}
 
 	return &wopiProvider{
-		conf:       c,
+		conf:       &c,
 		wopiClient: wopiClient,
 		appURLs:    appURLs,
 	}, nil
@@ -199,7 +194,7 @@ func (p *wopiProvider) GetAppURL(ctx context.Context, resource *provider.Resourc
 		ut = anonymous
 		rPath, pathErr = getPathForExternalLink(ctx, scopes, resource, publicLinkURLPrefix)
 		if pathErr != nil {
-			log.Warn().Err(pathErr).Msg("wopi: failed to extract relative path from public link scope")
+			log.Warn().Interface("resId", resource.Id).Interface("path", resource.Path).Err(pathErr).Msg("wopi: failed to extract relative path from public link scope")
 		}
 	case ocmrole:
 		// OCM users have no username: use displayname@Idp
@@ -208,7 +203,21 @@ func (p *wopiProvider) GetAppURL(ctx context.Context, resource *provider.Resourc
 		// and resolve the folder
 		rPath, pathErr = getPathForExternalLink(ctx, scopes, resource, ocmLinkURLPrefix)
 		if pathErr != nil {
-			log.Warn().Err(pathErr).Msg("wopi: failed to extract relative path from ocm link scope")
+			log.Warn().Interface("resId", resource.Id).Interface("path", resource.Path).Err(pathErr).Msg("wopi: failed to extract relative path from ocm link scope")
+		}
+		if ext == "" {
+			// this is a single-file share, and we have to re-resolve the extension from the mime type
+			exts := gomime.ExtensionsByType(resource.MimeType)
+			for _, e := range exts {
+				if len(e) < len(ext) || len(ext) == 0 {
+					ext = e // heuristically we know we want the shortest file extension
+				}
+			}
+			ext = "." + ext
+			log.Debug().Interface("mime", resource.MimeType).Interface("ext", ext).Msg("wopi: resolved extension for single-file OCM share")
+		}
+		if ext == "" {
+			return nil, errors.New("wopi: failed to resolve extension from OCM file's mime type %s" + resource.MimeType)
 		}
 	default:
 		// in all other cases use the resource's path
@@ -253,15 +262,10 @@ func (p *wopiProvider) GetAppURL(ctx context.Context, resource *provider.Resourc
 		q.Add("appurl", viewAppURL)
 	}
 	if q.Get("appurl") == "" && q.Get("appviewurl") == "" {
-		return nil, errors.New("wopi: neither edit nor view app url found")
+		return nil, errors.New("wopi: neither edit nor view app url found for type " + ext)
 	}
 	if p.conf.AppIntURL != "" {
 		q.Add("appinturl", p.conf.AppIntURL)
-	}
-
-	if _, ok := opaqueMap["forcelock"]; ok {
-		// this is to work around an issue with Microsoft Office, cf. cs3org/wopiserver#106
-		q.Add("forcelock", "1")
 	}
 
 	httpReq.URL.RawQuery = q.Encode()
@@ -339,6 +343,7 @@ func (p *wopiProvider) GetAppURL(ctx context.Context, resource *provider.Resourc
 		AppUrl:         appFullURL,
 		Method:         method,
 		FormParameters: formParams,
+		Target:         appprovider.Target_TARGET_IFRAME,
 	}, nil
 }
 
@@ -560,17 +565,17 @@ func getPathForExternalLink(ctx context.Context, scopes map[string]*authpb.Scope
 		return "", err
 	}
 
-	if statRes.Info.Path == resource.Path {
+	if statRes.Info.Path == resource.Path || utils.ResourceIDEqual(statRes.Info.Id, resource.Id) {
 		// this is a direct link to the resource
 		return pathPrefix + token, nil
 	}
-	// otherwise we are in a subfolder of the public link
+	// otherwise we are in a subfolder of the link
 	relPath, err := filepath.Rel(statRes.Info.Path, resource.Path)
 	if err != nil {
 		return "", err
 	}
 	if strings.HasPrefix(relPath, "../") {
-		return "", errors.New("Scope path does not contain target resource")
+		return "", errors.New("Scope path does not contain target resource path " + statRes.Info.Path)
 	}
 	return path.Join(pathPrefix+token, path.Dir(relPath)), nil
 }

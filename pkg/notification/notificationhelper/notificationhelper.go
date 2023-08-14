@@ -58,20 +58,24 @@ func defaultConfig() *Config {
 
 // New creates a new Notification Helper.
 func New(name string, m map[string]interface{}, log *zerolog.Logger) *NotificationHelper {
+	annotatedLogger := log.With().Str("service", name).Str("scope", "notifications").Logger()
+
 	conf := defaultConfig()
 	nh := &NotificationHelper{
 		Name: name,
 		Conf: conf,
-		Log:  log,
+		Log:  &annotatedLogger,
+	}
+
+	if len(m) == 0 {
+		log.Info().Msgf("no 'notifications' field in service config, notifications will be disabled")
+		return nh
 	}
 
 	if err := mapstructure.Decode(m, conf); err != nil {
 		log.Error().Err(err).Msgf("decoding config failed, notifications will be disabled")
 		return nh
 	}
-
-	annotatedLogger := log.With().Str("service", nh.Name).Str("scope", "notifications").Logger()
-	nh.Log = &annotatedLogger
 
 	if err := nh.connect(); err != nil {
 		log.Error().Err(err).Msgf("connecting to nats failed, notifications will be disabled")
@@ -121,6 +125,10 @@ func (nh *NotificationHelper) connect() error {
 
 // Stop stops the notification helper.
 func (nh *NotificationHelper) Stop() {
+	if nh.nc == nil {
+		// service didn't connect yet to nat server
+		return
+	}
 	if err := nh.nc.Drain(); err != nil {
 		nh.Log.Error().Err(err)
 	}

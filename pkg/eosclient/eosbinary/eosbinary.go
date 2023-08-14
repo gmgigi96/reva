@@ -120,7 +120,7 @@ type Options struct {
 	TokenExpiry int
 }
 
-func (opt *Options) init() {
+func (opt *Options) ApplyDefaults() {
 	if opt.ForceSingleUserMode && opt.SingleUsername != "" {
 		opt.SingleUsername = "apache"
 	}
@@ -150,7 +150,7 @@ type Client struct {
 
 // New creates a new client with the given options.
 func New(opt *Options) (*Client, error) {
-	opt.init()
+	opt.ApplyDefaults()
 	c := new(Client)
 	c.opt = opt
 	return c, nil
@@ -1187,6 +1187,32 @@ func (c *Client) mapToFileInfo(ctx context.Context, kv, attrs map[string]string,
 		mtimenanos, _ = strconv.ParseUint(mtimeSplit[1], 10, 32)
 	}
 
+	var ctimesec, ctimenanos uint64
+	if val, ok := kv["ctime"]; ok && val != "" {
+		split := strings.Split(val, ".")
+		ctimesec, err = strconv.ParseUint(split[0], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		ctimenanos, _ = strconv.ParseUint(split[1], 10, 32)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var atimesec, atimenanos uint64
+	if val, ok := kv["atime"]; ok && val != "" {
+		split := strings.Split(val, ".")
+		atimesec, err = strconv.ParseUint(split[0], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		atimenanos, err = strconv.ParseUint(split[1], 10, 32)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	isDir := false
 	var xs *eosclient.Checksum
 	if _, ok := kv["files"]; ok {
@@ -1236,6 +1262,10 @@ func (c *Client) mapToFileInfo(ctx context.Context, kv, attrs map[string]string,
 		TreeSize:   treeSize,
 		MTimeSec:   mtimesec,
 		MTimeNanos: uint32(mtimenanos),
+		CTimeSec:   ctimesec,
+		CTimeNanos: uint32(ctimenanos),
+		ATimeSec:   atimesec,
+		ATimeNanos: uint32(atimenanos),
 		IsDir:      isDir,
 		Instance:   c.opt.URL,
 		SysACL:     sysACL,

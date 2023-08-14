@@ -9,8 +9,7 @@ import (
 	"net/http"
 
 	"github.com/cs3org/reva/pkg/rhttp/global"
-	"github.com/mitchellh/mapstructure"
-	"github.com/rs/zerolog"
+	"github.com/cs3org/reva/pkg/utils/cfg"
 )
 
 func init() {
@@ -27,20 +26,18 @@ type config struct {
 }
 
 // New returns a new otg service
-func New(m map[string]interface{}, log *zerolog.Logger) (global.Service, error) {
-	c := &config{}
-	if err := mapstructure.Decode(m, c); err != nil {
+func New(ctx context.Context, m map[string]interface{}) (global.Service, error) {
+	var c config
+	if err := cfg.Decode(m, &c); err != nil {
 		return nil, err
 	}
-
-	c.init()
 
 	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", c.DbUsername, c.DbPassword, c.DbHost, c.DbPort, c.DbName))
 	if err != nil {
 		return nil, err
 	}
 
-	return &svc{conf: c, db: db}, nil
+	return &svc{conf: &c, db: db}, nil
 }
 
 // Close performs cleanup.
@@ -48,7 +45,7 @@ func (s *svc) Close() error {
 	return s.db.Close()
 }
 
-func (c *config) init() {
+func (c *config) ApplyDefaults() {
 	if c.Prefix == "" {
 		c.Prefix = "otg"
 	}
