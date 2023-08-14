@@ -158,9 +158,14 @@ transfer-retry -txId fe671ae3-0fbf-4b06-b7df-32418c2ebfcb
 ```
 
 ## 6 Cleanup transfers
-Transfers will be removed from the db using the `transfer-cancel` command when the configuration property `remove_on_cancel` of the datatx service has been set to `true` as follows:
+Transfers will be removed from the db using the `transfer-cancel` command when the configuration property `remove_transfer_on_cancel` and `remove_transfer_job_on_cancel` of the datatx service and rclone driver respectively have been set to `true` as follows:
 ```
 [grpc.services.datatx]
-remove_on_cancel = true
+remove_transfer_on_cancel = true
+
+[grpc.services.datatx.txdrivers.rclone]
+remove_transfer_job_on_cancel = true
 ```
 Currently this setting is recommended.
+
+*Note that with these settings `transfer-cancel` will remove transfers & jobs even when a transfer cannot actually be cancelled because it was already in an end-state, eg. `finished` or `failed`. So `transfer-cancel` will act like a 'delete' function.
