@@ -53,6 +53,7 @@ func New(ctx context.Context, m map[string]interface{}) (storage.FS, error) {
 	if _, ok := m["version_invariant"]; !ok {
 		c.VersionInvariant = true
 	}
+	c.EnableHome = true
 
 	t, ok := m["mount_id_template"].(string)
 	if !ok || t == "" {
