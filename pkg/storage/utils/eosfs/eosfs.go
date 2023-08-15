@@ -1112,7 +1112,10 @@ func (fs *eosfs) RemoveGrant(ctx context.Context, ref *provider.Reference, g *pr
 	}
 
 	if eosACL.Type == acl.TypeLightweight {
-		attr := &eosclient.Attribute{}
+		attr := &eosclient.Attribute{
+			Type: SystemAttr,
+			Key:  fmt.Sprintf("%s.%s", lwShareAttrKey, eosACL.Qualifier),
+		}
 		if err := fs.c.UnsetAttr(ctx, rootAuth, attr, true, fn); err != nil {
 			return errors.Wrap(err, "eosfs: error removing acl for lightweight account")
 		}
