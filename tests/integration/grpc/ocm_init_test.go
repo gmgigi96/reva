@@ -24,7 +24,6 @@ import (
 	"os"
 	"time"
 
-	conversions "github.com/cs3org/reva/pkg/cbox/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
@@ -161,7 +160,7 @@ func initSQLData(variables map[string]string, tokens []*invitepb.InviteToken, ac
 func initTokens(db *sql.DB, tokens []*invitepb.InviteToken) error {
 	query := "INSERT INTO ocm_tokens (token, initiator, expiration, description) VALUES (?,?,?,?)"
 	for _, token := range tokens {
-		if _, err := db.Exec(query, token.Token, conversions.FormatUserID(token.UserId), time.Unix(int64(token.Expiration.Seconds), 0), token.Description); err != nil {
+		if _, err := db.Exec(query, token.Token, token.UserId.OpaqueId, time.Unix(int64(token.Expiration.Seconds), 0), token.Description); err != nil {
 			return err
 		}
 	}
