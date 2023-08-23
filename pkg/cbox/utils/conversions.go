@@ -19,6 +19,7 @@
 package utils
 
 import (
+	"database/sql"
 	"strings"
 	"time"
 
@@ -51,7 +52,7 @@ type DBShare struct {
 	Quicklink                    bool
 	Description                  string
 	NotifyUploads                bool
-	NotifyUploadsExtraRecipients string
+	NotifyUploadsExtraRecipients sql.NullString
 }
 
 // FormatGrantee formats a CS3API grantee to a string.
@@ -257,6 +258,6 @@ func ConvertToCS3PublicShare(s DBShare) *link.PublicShare {
 		Quicklink:                    s.Quicklink,
 		Description:                  s.Description,
 		NotifyUploads:                s.NotifyUploads,
-		NotifyUploadsExtraRecipients: s.NotifyUploadsExtraRecipients,
+		NotifyUploadsExtraRecipients: s.NotifyUploadsExtraRecipients.String,
 	}
 }
